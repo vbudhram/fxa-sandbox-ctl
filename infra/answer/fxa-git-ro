@@ -23,6 +23,8 @@ ok='^(--|-[0-9]+|-[npiwlcEFPWsuzMCh]+|-[ABCU][0-9]*|-[LSG].+|-e|--(oneline|stat|
 # A path outside the tree turns git diff into a compare of any two files (an implicit --no-index),
 # so no argument may be absolute or climb out with "..". Revision ranges (a..b) keep working.
 for a in "$@"; do
+  # blame -S<file> reads revisions from any file (it printed another answer's token); -S is a pickaxe elsewhere.
+  [ "$sub" != blame ] || [[ "$a" != -S* ]] || die "option not allowed: $a"
   case "$a" in -*) [[ "$a" =~ $ok ]] || die "option not allowed: $a" ;;
     /*|..|../*|*/..|*/../*) die "path outside /workspace: $a" ;; esac
 done
