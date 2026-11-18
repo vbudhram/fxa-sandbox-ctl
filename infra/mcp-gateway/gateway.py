@@ -743,7 +743,12 @@ CI_TOOLS = {
     "get_job_artifacts": ("The paths of a CircleCI job's artifacts (for get_artifact_text).", {"job_number": "integer"}),
     "get_artifact_text": ("The text of one .md, .txt, .log, .xml or .json artifact of a CircleCI job, up to 40 KB, "
                           "such as a Playwright error-context.md.", {"job_number": "integer", "path": "string"}),
+    "list_pipelines": ("A CircleCI project's newest pipelines on one branch (default main), newest first: number, created_at, "
+                       "trigger (schedule for a nightly, webhook for a push), commit, and each workflow's name, status and id "
+                       "(for get_workflow_jobs). trigger=schedule keeps only the scheduled runs. limit: 1 to 20, default 10.",
+                       {"branch": "string", "trigger": "string", "limit": "integer"}),
 }
+CI_OPTIONAL = {"tail_lines", "branch", "trigger", "limit"}
 CI_UUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 CI_TEXT_RE = re.compile(r"(?i).+\.(md|txt|log|xml|json)")
 CI_MAX = 20 << 20  # bytes of one download
@@ -801,7 +806,7 @@ class CircleCI(Upstream):
                 if n in self.tools_allowed:
                     props = {"owner": {"type": "string"}, "repo": {"type": "string"}, **{k: {"type": t} for k, t in extra.items()}}
                     self.tools[n] = {"name": n, "description": desc, "inputSchema": {
-                        "type": "object", "properties": props, "required": ["owner", "repo"] + [k for k in extra if k != "tail_lines"]}}
+                        "type": "object", "properties": props, "required": ["owner", "repo"] + [k for k in extra if k not in CI_OPTIONAL]}}
         return self.tools
 
     def rpc(self, method, params):
@@ -829,6 +834,8 @@ class CircleCI(Upstream):
                    "jobs": [{"name": j.get("name"), "status": j.get("status"), "job_number": j.get("job_number")}
                             for j in self._pages("/api/v2/workflow/%s/job" % wf)]}
             return {"content": [{"type": "text", "text": json.dumps(out, indent=1)}]}
+        if tool == "list_pipelines":
+            return {"content": [{"type": "text", "text": json.dumps(self._pipelines(slug, args), indent=1)}]}
         n = args.get("job_number")
         if isinstance(n, str) and n.isdigit():
             n = int(n)
@@ -868,6 +875,37 @@ class CircleCI(Upstream):
                 text = "".join(m.get("message") or "" for m in msgs if isinstance(m, dict))
                 parts += log_tail([re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", ln) for ln in text.splitlines()], args.get("tail_lines"))
         return {"content": [{"type": "text", "text": "\n".join(parts)}]}
+
+    def _pipelines(self, slug, args):
+        br, trig, lim = args.get("branch") or "main", args.get("trigger") or None, args.get("limit") or 10
+        if not isinstance(br, str) or not GH_REF_RE.fullmatch(br):
+            raise UpstreamError("%s: branch must be a plain branch name" % self.name)
+        if trig not in (None, "schedule", "webhook", "api"):
+            raise UpstreamError("%s: trigger must be schedule, webhook or api" % self.name)
+        if isinstance(lim, bool) or not isinstance(lim, int) or not 1 <= lim <= 20:
+            raise UpstreamError("%s: limit must be 1 to 20" % self.name)
+        out, token = [], None
+        # A nightly is about one pipeline in 20 on main, so a schedule filter reads up to 10 pages.
+        for _ in range(10):
+            q = {"branch": br, **({"page-token": token} if token else {})}
+            doc = json.loads(self._get("%s/api/v2/project/gh/%s/pipeline?%s" % (self.api, slug, urllib.parse.urlencode(q))))
+            for p in doc.get("items") or []:
+                t = (p.get("trigger") or {}).get("type")
+                if trig and t != trig:
+                    continue
+                pid = str(p.get("id") or "")
+                if not CI_UUID_RE.fullmatch(pid):
+                    continue
+                wfs = self._pages("/api/v2/pipeline/%s/workflow" % pid, most=2)
+                out.append({"number": p.get("number"), "created_at": p.get("created_at"), "state": p.get("state"), "trigger": t,
+                            "commit": str((p.get("vcs") or {}).get("revision") or "")[:12],
+                            "workflows": [{"name": w.get("name"), "status": w.get("status"), "id": w.get("id")} for w in wfs]})
+                if len(out) >= lim:
+                    return {"pipelines": out}
+            token = doc.get("next_page_token")
+            if not token:
+                break
+        return {"pipelines": out}
 
 
 def load_upstreams():

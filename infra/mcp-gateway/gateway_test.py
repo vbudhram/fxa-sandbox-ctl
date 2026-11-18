@@ -684,6 +684,7 @@ class CircleCIConnector(unittest.TestCase):
     """The gateway's own CircleCI tools: one project per call, and the token only on CircleCI's own host."""
     SEEN = []  # (host, path, Circle-Token header) of every request to either fake host
     WF, WF_OTHER = "48a37f1d-c27d-4de2-af96-3b954c8b4be3", "0b6e0e8c-0000-4000-8000-000000000001"
+    P1, P2, P3 = ("11111111-0000-4000-8000-00000000000%d" % i for i in (1, 2, 3))
     KEY = "-----BEGIN RSA PRIVATE KEY-----\nMIIEfakefakefake\nAAAA\n-----END RSA PRIVATE KEY-----"
     GHP = "ghp_" + "A1" * 18
     DIGEST = "sha256:" + "ab" * 32
@@ -724,6 +725,16 @@ class CircleCIConnector(unittest.TestCase):
         st = server(store, "store")
 
         def cci(p):
+            # Two pages of main's pipelines: a push, a nightly, then a nightly on page 2.
+            if p == "/api/v2/project/gh/mozilla/fxa/pipeline?branch=main":
+                return 200, {"items": [{"id": t.P1, "number": 3, "state": "created", "trigger": {"type": "webhook"}, "vcs": {"revision": "a" * 40}},
+                                       {"id": t.P2, "number": 2, "state": "created", "trigger": {"type": "schedule"}, "vcs": {"revision": "b" * 40}}],
+                             "next_page_token": "pg2"}, None
+            if p == "/api/v2/project/gh/mozilla/fxa/pipeline?branch=main&page-token=pg2":
+                return 200, {"items": [{"id": t.P3, "number": 1, "state": "created", "trigger": {"type": "schedule"}, "vcs": {"revision": "c" * 40}}],
+                             "next_page_token": None}, None
+            if p.startswith("/api/v2/pipeline/") and p.endswith("/workflow"):
+                return 200, {"items": [{"name": "nightly", "status": "failed" if t.P2 in p else "success", "id": t.WF}], "next_page_token": None}, None
             if p == "/api/v2/workflow/%s" % t.WF:
                 return 200, {"project_slug": "gh/mozilla/fxa", "name": "test_pull_request", "status": "failed"}, None
             if p == "/api/v2/workflow/%s" % t.WF_OTHER:
@@ -824,8 +835,21 @@ class CircleCIConnector(unittest.TestCase):
             self.g.apply_rules(rules, "get_job", schema, {"owner": "mozilla", "repo": "fxa", "job_number": 1})
         self.assertTrue(self.call("get_job", scope={"repos": ["mozilla/pyfxa"]}, job_number=7)["isError"])
 
+    def test_list_pipelines_finds_the_nightlies_across_pages_with_their_workflows(self):
+        out = json.loads(self.call("list_pipelines", trigger="schedule")["content"][0]["text"])["pipelines"]
+        self.assertEqual([(p["number"], p["trigger"], p["commit"]) for p in out], [(2, "schedule", "b" * 12), (1, "schedule", "c" * 12)])
+        self.assertEqual(out[0]["workflows"], [{"name": "nightly", "status": "failed", "id": self.WF}])
+        every = json.loads(self.call("list_pipelines", limit=1)["content"][0]["text"])["pipelines"]
+        self.assertEqual([p["number"] for p in every], [3])
+
+    def test_list_pipelines_refuses_a_bad_branch_trigger_or_limit_and_another_project(self):
+        for args in ({"branch": "main?x=1"}, {"branch": "../x"}, {"trigger": "manual"}, {"limit": 21}, {"limit": True}):
+            self.assertTrue(self.call("list_pipelines", **args)["isError"], args)
+        self.assertTrue(self.call("list_pipelines", scope={"repos": ["mozilla/pyfxa"]})["isError"])
+        self.assertEqual(self.up.list_tools()["list_pipelines"]["inputSchema"]["required"], ["owner", "repo"])
+
     def test_only_read_tools_exist(self):
-        self.assertEqual(sorted(self.up.list_tools()), ["get_artifact_text", "get_job", "get_job_artifacts", "get_workflow_jobs"])
+        self.assertEqual(sorted(self.up.list_tools()), ["get_artifact_text", "get_job", "get_job_artifacts", "get_workflow_jobs", "list_pipelines"])
         self.assertFalse(re.search(r"rerun|cancel|approve|POST", open(os.path.join(HERE, "gateway.py")).read().split("class CircleCI")[1].split("def load_upstreams")[0]))
 
 
