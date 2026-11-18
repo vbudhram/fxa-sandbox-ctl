@@ -744,6 +744,9 @@ _inv_done() {
     [ -z "$p" ] || ! _inv_path_ok "$slug" "$p" || printf '%s\n' "$p" >> "$f.paths"
   done < <(jq -r '[.fix.steps[].file, .fix.tests[].file] | map(select(. != null)) | unique | .[]' <<< "$out")
   out="$(_ROUTINE_PY investigate-render "$rf" "$key" "$run" "$slug" "${PIPE_JIRA_SITE:-https://mozilla-hub.atlassian.net}" "$f.paths" 2>&1)" || rc=1
+  # The guard knows token formats only; a runtime secret value has none, so mask it by its value first.
+  [ "$rc" = 1 ] || out="$(_session_mask_json <<< "$out" 2>/dev/null)" && [ -n "$out" ] \
+    || { rc=1; out="ERROR: the host could not read a runtime secret to mask the comment, so it is not posted"; }
   if [ "$rc" = 0 ]; then
     jq -n --arg t "$(jq -r .comment <<< "$out")" '{comment: $t}' > "$f.json" && : > "$f.diff" \
       && python3 -I "${SANDBOX_ROOT}/lib/pii_guard.py" "$f.json" "$f.diff" >/dev/null 2>&1 || { rc=1; out="ERROR: the comment may hold personal data or a secret, so it is not posted"; }
