@@ -178,4 +178,9 @@ check "a non-admin's ask is a card for the ticket, and runs nothing" "Jira ticke
 check "a team admin's tap runs it" "done: queued an investigation of FXA-20.|inv_ask FXA-20 ${k} Ana" \
   "$(asks_confirm $k "$(jq -r '.[0].nonce' <<< "$ev")" "$(jq -r '.[0].sha' <<< "$ev")" allow Ana 1)|$(grep -v -- --check "$tmp/inv")"
 
+# The ctl runs under set -euo pipefail: a refused ask is a result, so the job logs it and goes on.
+new; asks_role "$k" 1 Ana
+_ASKS_NO_JOB=1 asks_take "$k" '[{"type":"turn_end","asks":["merge","ready"]}]'
+check "a refused ask does not stop the job under pipefail" "reached|2" \
+  "$( (set -euo pipefail; session_asks "$k" >/dev/null 2>&1; echo reached) )|$(grep -c . "$tmp/$k.host-actions.jsonl")"
 exit $fail

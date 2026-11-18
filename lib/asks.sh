@@ -52,10 +52,11 @@ session_asks() {
         else session_set "$key" asks_n "$((n + 1))"
           # The agent read untrusted text, so the role alone is not consent: the admin's words must name it.
           # Refused only for the role or the words: a team admin's tap on a card can allow it.
+          # A refusal is a result: || true, or pipefail ends the job with its lock held.
           if [ "$adm" = 1 ] && asks_gate 1 "$who" "$line" >/dev/null 2>&1 && _asks_words "$key" "$turn" "$line"; then
-            out="$(_ask_one "$key" 1 "$who" "$line" 2>&1 < /dev/null | tail -3 | tr '\n' ' ' | sed 's/ *$//')"
-          elif asks_gate 1 "$who" "$line" >/dev/null 2>&1; then out="$(_asks_card "$key" "$who" "$line" 2>&1 < /dev/null | tail -3 | tr '\n' ' ' | sed 's/ *$//')"
-          else out="$(_ask_one "$key" "$adm" "$who" "$line" 2>&1 < /dev/null | tail -3 | tr '\n' ' ' | sed 's/ *$//')"; fi
+            out="$(_ask_one "$key" 1 "$who" "$line" 2>&1 < /dev/null | tail -3 | tr '\n' ' ' | sed 's/ *$//')" || true
+          elif asks_gate 1 "$who" "$line" >/dev/null 2>&1; then out="$(_asks_card "$key" "$who" "$line" 2>&1 < /dev/null | tail -3 | tr '\n' ' ' | sed 's/ *$//')" || true
+          else out="$(_ask_one "$key" "$adm" "$who" "$line" 2>&1 < /dev/null | tail -3 | tr '\n' ' ' | sed 's/ *$//')" || true; fi
         fi
         jq -nc --arg k "$key" --arg w "$who" --arg a "$line" --arg o "$out" --argjson adm "$adm" \
           '{at: now, key: $k, asked_by: $w, admin: ($adm == 1), ask: $a, result: $o}' >> "${SESSION_DIR}/${key}.host-actions.jsonl"
@@ -349,7 +350,7 @@ asks_confirm() {
     out="refused: the card changed after it was shown, so nothing ran."
   elif [ "$verdict" != allow ]; then out="denied by ${name}: it did not run."
   elif [ "$(_asks_target "$key" "$line" 2>/dev/null)" != "$target" ]; then out="refused: ${target} is not what GitHub shows now, so nothing ran."
-  else out="$(_ask_one "$key" 1 "$name" "$line" 2>&1 < /dev/null | tail -3 | tr '\n' ' ' | sed 's/ *$//')"; fi
+  else out="$(_ask_one "$key" 1 "$name" "$line" 2>&1 < /dev/null | tail -3 | tr '\n' ' ' | sed 's/ *$//')" || true; fi
   jq -nc --arg k "$key" --arg w "$(jq -r .who <<< "$rec")" --arg by "$name" --arg a "$line" --arg o "$out" --argjson adm "$([ "$adm" = 1 ] && echo true || echo false)" \
     '{at: now, key: $k, asked_by: $w, tapped_by: $by, admin: $adm, ask: $a, result: $o}' >> "${SESSION_DIR}/${key}.host-actions.jsonl"
   _session_history_add "$key" action "Host: ${line}: ${out} (card tapped by ${name})"
