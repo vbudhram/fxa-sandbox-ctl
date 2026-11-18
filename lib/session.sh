@@ -1208,7 +1208,7 @@ _SESSION_WATCH_JQ="fromjson? | if .type == \"result\" or .type == \"turn.complet
 
 # _session_activity   stream-json lines on stdin → what the agent did last, one line.
 _session_activity() {
-  jq -R -s -r "split(\"\\n\") | map(fromjson? | ${_SESSION_STEPS_JQ}) | last // \"\"" 2>/dev/null
+  jq -R -s "split(\"\\n\") | map(fromjson? | ${_SESSION_STEPS_JQ}) | last // \"\"" 2>/dev/null | _session_mask_json | jq -r .
 }
 
 # The change so far as one line, run in /workspace with the base sha as $1: tracked
@@ -1236,7 +1236,7 @@ _session_watch() {
   local loop="p=; h=; while :; do c=\"\$(git rev-parse -q HEAD 2>/dev/null)\"; [ \"\$c\" = \"\$h\" ] || { [ -z \"\$h\" ] || timeout 20 git fetch -q origin main 2>/dev/null; h=\$c; }
     n=\"\$(bash -c $(printf %q "$_SESSION_DIFFSTAT_SH") _ $(printf %q "$base"))\"; [ \"\$n\" = \"\$p\" ] || { p=\$n; printf '%s\\n' \"\$n\"; }; sleep 15; done"
   _session_sh "$(worktree_branch_for "$1")" "cd /workspace && { timeout 1800 tail -q -n 0 -F .fxa-auto-claude.jsonl .fxa-auto-stream.jsonl & timeout 1800 bash -c $(printf %q "$loop") & wait; } 2>/dev/null" \
-    | jq --unbuffered -R -c "$_SESSION_WATCH_JQ" \
+    | jq --unbuffered -R -c "$_SESSION_WATCH_JQ" | _session_mask_json \
     || true # the watch ends when its runner stops or after 30 min; neither is a failure
 }
 
@@ -1283,6 +1283,13 @@ _session_view() {
   _session_sh "$(worktree_branch_for "$1")" 'cd /workspace && { timeout 1800 tail -n 300 -F .fxa-auto-claude.jsonl & timeout 1800 tail -n 0 -F .fxa-auto-stream.jsonl & wait; } 2>/dev/null' \
     | jq --unbuffered -R -c --slurpfile vals <(_session_secret_values) "$_SESSION_VIEW_JQ" \
     || true
+}
+
+# _session_mask_json   JSON lines on stdin, each string masked with the team's runtime secret values, for text that
+# goes to Slack or Jira (the bot masks only known token prefixes). No runtime secrets: the lines pass as they are.
+_session_mask_json() {
+  [ -n "${PIPE_RUNTIME_SECRETS:-}" ] || { cat; return; }
+  jq --unbuffered -c --slurpfile vals <(_session_secret_values) "${_SESSION_MASK_JQ} walk(if type == \"string\" then mask else . end)"
 }
 
 # _session_secret_values   The team's runtime secret values as JSON strings, for the exact-value mask:
@@ -1407,7 +1414,7 @@ _session_parse() {
     elif .type == \"item.completed\" and .item.type == \"agent_message\" then {type: \"say\", text: (.item.text // \"\")}
     elif .type == \"turn.completed\" then {type: \"turn_done\"}
     elif .type == \"turn.failed\" or .type == \"error\" then {type: \"error\", text: ((.error.message // .message // \"the agent failed\") | tostring)}
-    else empty end" 2>/dev/null
+    else empty end" 2>/dev/null | _session_mask_json
 }
 
 # _session_fold <last say>   A parsed event array on stdin → {events, last}: each
