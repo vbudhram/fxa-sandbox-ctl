@@ -65,7 +65,7 @@ new; asks_role "$k" 1 Ana
 _ASKS_NO_JOB=1 asks_take "$k" '[{"type":"turn_end","asks":["ready","merge"]}]'
 : > "$tmp/gh"; session_asks "$k"
 check "the job logs each ask with who asked" "Ana:ready:true|Ana:merge:true" "$(jq -r '"\(.asked_by):\(.ask):\(.admin)"' "$tmp/$k.host-actions.jsonl" | paste -sd'|' -)"
-check "the results reach the agent's next turn" "2" "$(grep -c '^- `' "$tmp/$k.queue")"
+check "the results reach the agent's next turn, but not a card's wait" "1" "$(grep -c '^- `' "$tmp/$k.queue")"
 check "the note's turn has no admin" "0|host" "$(session_get $k q_admin)|$(session_get $k q_asker)"
 check "the queue is empty after the job" "no" "$([ -e "$tmp/$k.asks.jsonl" ] && echo yes || echo no)"
 # The admin's own words must name the action and the PR: the agent read text that could write the line.
@@ -87,7 +87,8 @@ check "words with a negation allow nothing" "0" "$(grep -c . "$tmp/gh")"
 new; asks_role "$k" 0 Bo
 _ASKS_NO_JOB=1 asks_take "$k" '[{"type":"turn_end","asks":["ready"]}]'
 : > "$tmp/gh"; session_asks "$k"
-check "a non-admin turn's ask makes no GitHub write, only a card" "0|1|1" "$(grep -c . "$tmp/gh")|$(grep -c 'waiting: only a team admin' "$tmp/$k.queue")|$(_asks_cards $k | grep -c .)"
+check "a non-admin turn's ask makes no GitHub write, only a card, and no note that says it again" "0|0|1" "$(grep -c . "$tmp/gh")|$(cat "$tmp/$k.queue" 2>/dev/null | grep -c 'waiting: only a team admin' || true)|$(_asks_cards $k | grep -c .)"
+
 
 # The card: a team admin's one tap allows exactly what it shows, once.
 ev="$(asks_card_events $k)"
@@ -105,6 +106,10 @@ check "the tap is logged and the result note's turn has no admin" "Bo:Ana:ready|
   "$(jq -r 'select(.tapped_by and (.result | startswith("done"))) | "\(.asked_by):\(.tapped_by):\(.ask)"' "$tmp/$k.host-actions.jsonl")|$(grep -c 'Result: done' "$tmp/$k.queue")|$(session_get $k q_admin)|$(session_get $k q_asker)"
 check "a second tap is a Deny and runs nothing" "expired: this card is no longer valid, so it counts as Deny. Nothing ran.|1" \
   "$(asks_confirm $k "$n1" "$s1" allow Ana 1)|$(grep -c . "$tmp/gh")"
+new; asks_role "$k" 1 Ana; words "log a new JIRA issue for this PR, then make it ready for review"
+_ASKS_NO_JOB=1 asks_take "$k" '[{"type":"turn_end","asks":["ready"]}]'
+: > "$tmp/gh"; session_asks "$k"
+check "make it ready, with the session's one PR, runs with no card" "1|0" "$(grep -c 'pr ready' "$tmp/gh")|$(_asks_cards $k | grep -c . || true)"
 
 # A comment card posts the body it showed, even when the runner's file changes after.
 new; asks_role "$k" 0 Bo

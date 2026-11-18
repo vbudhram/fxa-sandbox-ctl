@@ -2437,7 +2437,7 @@ _session_announce() {
 }
 
 cmd_task() {
-  local words="" source="" key="" owner="" prompt_file="" resume_from="" runtime="" link="" owner_name="" owner_image="" mcp="" mcp_set="" fresh_pr="" thread="" new_pr="" queued_s="" findings_file="" inbox_dir="" repos="" checkout="" rrun="" caller=""
+  local words="" source="" key="" owner="" prompt_file="" resume_from="" runtime="" link="" owner_name="" asker_name="" owner_image="" mcp="" mcp_set="" fresh_pr="" thread="" new_pr="" queued_s="" findings_file="" inbox_dir="" repos="" checkout="" rrun="" caller=""
   while [ $# -gt 0 ]; do
     # A routine run takes only these; any other option is the caller's say, which it must not have.
     case "$1" in --id|--thread|--link|--queued-s|--runtime|--source|--routine-run) ;; *) caller=1 ;; esac
@@ -2455,6 +2455,7 @@ cmd_task() {
       --findings-file) findings_file="$2"; shift 2 ;;
       --inbox-dir) inbox_dir="$2"; shift 2 ;;
       --owner-name) owner_name="$2"; shift 2 ;;
+      --asker-name) asker_name="$2"; shift 2 ;;
       --owner-image) owner_image="$2"; shift 2 ;;
       --ci-ok) shift ;; # an older bot's flag: a role grants no CI config
       --admin-words-file) words="$2"; shift 2 ;;
@@ -2639,7 +2640,9 @@ cmd_task() {
   # Who started it, for the dashboard's conversation view.
   local person; person="$(_session_person "$owner_name" "$owner_image")"
   [ -n "${person%%$'\t'*}" ] && session_set "$key" owner_name "${person%%$'\t'*}"
-  asks_role "$key" "$([ -n "$words" ] && [ -s "$words" ] && echo 1 || echo 0)" "${person%%$'\t'*}"
+  # A resume keeps the thread's owner; the turn's asker is the person who wrote (--asker-name).
+  local asker="${person%%$'\t'*}"; [ -z "$asker_name" ] || { asker="$(_session_person "$asker_name" "")"; asker="${asker%%$'\t'*}"; }
+  asks_role "$key" "$([ -n "$words" ] && [ -s "$words" ] && echo 1 || echo 0)" "$asker"
   [ -n "${person#*$'\t'}" ] && session_set "$key" owner_image "${person#*$'\t'}"
   # Only a Slack https link is kept.
   [[ "$link" =~ ^https://[a-z0-9.-]+\.slack\.com/archives/[A-Za-z0-9]+/p[0-9]+(\?[A-Za-z0-9_.=\&-]*)?$ ]] && session_set "$key" slack_url "$link"

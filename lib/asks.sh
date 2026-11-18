@@ -61,7 +61,8 @@ session_asks() {
         jq -nc --arg k "$key" --arg w "$who" --arg a "$line" --arg o "$out" --argjson adm "$adm" \
           '{at: now, key: $k, asked_by: $w, admin: ($adm == 1), ask: $a, result: $o}' >> "${SESSION_DIR}/${key}.host-actions.jsonl"
         _session_history_add "$key" action "Host: ${line}: ${out} (asked by ${who:-someone})"
-        note="${note}- \`${line}\`: ${out}
+        # The card already tells the thread; a note would start a turn that says it again.
+        [[ "$out" == waiting:* ]] || note="${note}- \`${line}\`: ${out}
 "
       done < <(jq -r '.asks[]' <<< "$row")
     done < "${f}.run"
@@ -111,6 +112,8 @@ _asks_words() {
     pr="$(_ask_pr "$key" "$u" 2>/dev/null)" || return 1
     read -r slug num url <<< "$pr"
     toks=("$url" "${slug}#${num}" "pr ${num}" "pr #${num}")
+    # With no URL, _ask_pr found the session's one PR, so "it" can mean nothing else.
+    [ -z "$u" ] && case "$action" in ready|draft) toks+=("it" "this pr" "the pr") ;; esac
     [ "$(trees_allowed | grep -c .)" -gt 1 ] || toks+=("#${num}")
   fi
   words_match "$key" "$turn" "$verb" "${toks[@]}" >/dev/null

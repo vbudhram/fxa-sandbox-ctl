@@ -1538,7 +1538,6 @@ _session_finish_notes() {
   [ "${n:-0}" -gt 0 ] && echo "${n} screenshot(s) did not upload, so the PR is missing them."
   grep -q "WARN: could not attach round media\|WARN: could not post round media" "$log" 2>/dev/null && echo "This round's screenshots did not reach the PR."
   grep -q "NOTE: the PR was created; some media did not upload" "$log" 2>/dev/null && echo "Some screenshots did not attach to the PR."
-  grep -q "NOTE: PR created without the" "$log" 2>/dev/null && echo "The PR has no label."
   true
 }
 

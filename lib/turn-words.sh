@@ -43,7 +43,7 @@ words_match() {
     target) verbs='work on|switch to|move to|check out|checkout|take over|continue on|put|push|cherry-pick|apply|open' ;;
     rerun) verbs='rerun|retry' ;;
     review) verbs='ask|request review|ping|tag' ;;
-    ready) verbs='mark' ;;
+    ready) verbs='mark|make|set' ;;
     draft) verbs='move' ;;
     comment) verbs='comment on|reply on|post on' ;;
     add-repo) verbs='add|include' ;;
@@ -58,7 +58,7 @@ words_match() {
     | select(($lines | length) <= 3 or ($raw | test("https?://") | not))
     | ($lines | join("\n") | ascii_downcase) as $t
     | select($t | test("\\b(not|don.?t|do not|never|no|without|stop)\\b") | not)
-    | $t | splits("[;!?\n]|\\.(\\s|$)")
+    | $t | splits("[;!?\n]|\\.(\\s|$)|,?\\s+(and\\s+)?then\\s+")
     | select(test("^\\s*(@\\S+\\s+)?(please\\s+|can you\\s+|could you\\s+)?(" + $verbs + ")\\b"))
     | . as $c | (" " + ($c | gsub(":(\\s|$)"; " ") | gsub("[\\s,()]+"; " ")) + " ") as $p | select(any($toks[]; . as $k | $p | contains(" " + $k + " ")))
     | "\($u)\t\($c | gsub("\\s+"; " ") | ltrimstr(" ") | rtrimstr(" "))"' "$f" 2>/dev/null | head -1)"
