@@ -215,6 +215,8 @@ class LiveHub:
         srv, admin = self.srv, v["admin"]
         if event == "feed":
             return self.feed_view(d, v)
+        if event == "stats":
+            return srv.stats_for(d, admin)
         if event == "tail":
             return d if admin or not self.private_key(d["key"]) else None
         if event != "delta":
