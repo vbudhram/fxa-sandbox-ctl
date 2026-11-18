@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Screenshot a live page on the local FxA stack, or split a video into frames. See SKILL.md.
 //   node page-shot.mjs shot <route> [--account none|verified|unverified|2fa] [--viewport WxH]...
-//                      [--locale xx] [--dark] [--selector css] [--wait-for css]
+//                      [--locale xx] [--dark] [--high-contrast] [--forced-colors] [--selector css] [--wait-for css]
 //   node page-shot.mjs frames <video> [--every N]
 //   node page-shot.mjs --self-test
 import { execFileSync } from 'node:child_process';
@@ -23,7 +23,7 @@ export function parseArgs(argv) {
   const [cmd, target, ...rest] = argv;
   if (cmd !== 'shot' && cmd !== 'frames') throw new Error('usage: page-shot.mjs shot <route> ... | frames <video> [--every N]');
   if (!target || target.startsWith('--')) throw new Error(`${cmd} needs a ${cmd === 'shot' ? 'route' : 'video'}`);
-  const o = { cmd, target, account: 'none', viewports: [], locale: undefined, dark: false, selector: undefined, waitFor: undefined, every: 1 };
+  const o = { cmd, target, account: 'none', viewports: [], locale: undefined, dark: false, contrast: false, forced: false, selector: undefined, waitFor: undefined, every: 1 };
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i];
     const val = () => { if (rest[i + 1] === undefined) throw new Error(`${a} needs a value`); return rest[++i]; };
@@ -34,6 +34,8 @@ export function parseArgs(argv) {
       o.viewports.push({ width: +m[1], height: +m[2] });
     } else if (a === '--locale') o.locale = val();
     else if (a === '--dark') o.dark = true;
+    else if (a === '--high-contrast') o.contrast = true;
+    else if (a === '--forced-colors') o.forced = true;
     else if (a === '--selector') o.selector = val();
     else if (a === '--wait-for') o.waitFor = val();
     else if (a === '--every') o.every = Number(val());
@@ -53,7 +55,7 @@ export function splitRoute(route) {
 
 export function shotName(o, vp) {
   const slug = splitRoute(o.target).path.replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '') || 'root';
-  return [slug, o.account, `${vp.width}x${vp.height}`, o.locale, o.dark && 'dark'].filter(Boolean).join('-') + '.png';
+  return [slug, o.account, `${vp.width}x${vp.height}`, o.locale, o.dark && 'dark', o.contrast && 'hc', o.forced && 'forced'].filter(Boolean).join('-') + '.png';
 }
 
 // Load the functional-tests TypeScript helpers the way Playwright does: transpile on require.
@@ -115,7 +117,8 @@ async function shot(o) {
   const h = fxaHelpers();
   const target = h.createTarget('local');
   const browser = await h.firefox.launch({ firefoxUserPrefs: h.getFirefoxUserPrefs('local') });
-  const context = await browser.newContext({ viewport: o.viewports[0], locale: o.locale, colorScheme: o.dark ? 'dark' : 'light' });
+  const context = await browser.newContext({ viewport: o.viewports[0], locale: o.locale, colorScheme: o.dark ? 'dark' : 'light',
+    contrast: o.contrast ? 'more' : 'no-preference', forcedColors: o.forced ? 'active' : 'none' });
   const page = await context.newPage();
   fs.mkdirSync(MEDIA, { recursive: true });
   let file = path.join(MEDIA, shotName(o, o.viewports[0]));
@@ -176,6 +179,7 @@ function selfTest() {
   assert.deepEqual(o.viewports, [{ width: 390, height: 844 }, { width: 1280, height: 800 }]);
   assert.equal(shotName(o, o.viewports[0]), 'settings-2fa-390x844-de-dark.png');
   assert.equal(shotName(parseArgs(['shot', '/']), { width: 1280, height: 720 }), 'root-none-1280x720.png');
+  assert.equal(shotName(parseArgs(['shot', '/', '--high-contrast', '--forced-colors']), { width: 1, height: 2 }), 'root-none-1x2-hc-forced.png');
   assert.equal(shotName(parseArgs(['shot', 'settings/two_step_authentication?x=1']), { width: 1, height: 2 }), 'settings-two-step-authentication-none-1x2.png');
   assert.deepEqual(parseArgs(['shot', '/signin']).viewports, [{ width: 1280, height: 720 }]);
   const r = splitRoute('signin?force_passwordless=true');

@@ -13,6 +13,8 @@ node --check "$S"; check "shoot.mjs parses" 0 $?
 check "a dry run lists each shot" "a--b -> /workspace/.fxa-auto-media/01-x.png (900x700)|c--d -> /workspace/.fxa-auto-media/02-y.png (900x700)" \
   "$(node "$S" a--b:01-x c--d:02-y --dry-run | paste -sd'|' -)"
 check "--viewport sets the size" "a--b -> /workspace/.fxa-auto-media/01-x.png (1280x800)" "$(node "$S" a--b:01-x --viewport 1280x800 --dry-run)"
+check "the contrast flags reach the browser" "a--b -> /workspace/.fxa-auto-media/01-x.png (900x700, high contrast, forced colors)" \
+  "$(node "$S" a--b:01-x --high-contrast --forced-colors --dry-run)"
 node "$S" --dry-run >/dev/null 2>&1; check "no shots is a usage error" 2 $?
 node "$S" a--b --dry-run >/dev/null 2>&1; check "an id with no slug is a usage error" 2 $?
 node "$S" a--b:01-x --viewport 900 --dry-run >/dev/null 2>&1; check "a bad viewport is a usage error" 2 $?

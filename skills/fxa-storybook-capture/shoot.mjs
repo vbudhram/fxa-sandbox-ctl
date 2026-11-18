@@ -1,5 +1,5 @@
 // Screenshot Storybook stories into /workspace/.fxa-auto-media. See SKILL.md Step 4.
-//   node shoot.mjs <story-id>:<slug>... [--viewport WxH] [--dry-run]
+//   node shoot.mjs <story-id>:<slug>... [--viewport WxH] [--high-contrast] [--forced-colors] [--dry-run]
 // SB_PORT (6008) is the Storybook port. --dry-run prints the shots and exits.
 import fs from 'fs';
 import { createRequire } from 'module';
@@ -9,11 +9,13 @@ const PORT = process.env.SB_PORT ?? '6008';
 const args = process.argv.slice(2);
 const usage = (msg) => { console.error(`shoot: ${msg}\nusage: node shoot.mjs <story-id>:<slug>... [--viewport WxH] [--dry-run]`); process.exit(2); };
 
-let width = 900, height = 700, dry = false;
+let width = 900, height = 700, dry = false, contrast = 'no-preference', forcedColors = 'none';
 const SHOTS = [];
 for (let i = 0; i < args.length; i++) {
   const a = args[i];
   if (a === '--dry-run') dry = true;
+  else if (a === '--high-contrast') contrast = 'more';
+  else if (a === '--forced-colors') forcedColors = 'active';
   else if (a === '--viewport') {
     const m = /^(\d+)x(\d+)$/.exec(args[++i] ?? '');
     if (!m) usage('--viewport needs WxH, for example 900x700');
@@ -27,7 +29,7 @@ for (let i = 0; i < args.length; i++) {
 }
 if (SHOTS.length === 0) usage('give at least one <story-id>:<slug>');
 if (dry) {
-  for (const [id, slug] of SHOTS) console.log(`${id} -> ${OUT}/${slug}.png (${width}x${height})`);
+  for (const [id, slug] of SHOTS) console.log(`${id} -> ${OUT}/${slug}.png (${width}x${height}${contrast === 'more' ? ', high contrast' : ''}${forcedColors === 'active' ? ', forced colors' : ''})`);
   process.exit(0);
 }
 
@@ -35,7 +37,7 @@ if (dry) {
 const { firefox } = createRequire(`${process.env.FXA_ROOT ?? '/workspace'}/package.json`)('playwright');
 fs.mkdirSync(OUT, { recursive: true });
 const browser = await firefox.launch();
-const page = await browser.newPage({ viewport: { width, height } });
+const page = await browser.newPage({ viewport: { width, height }, contrast, forcedColors });
 
 for (const [id, slug] of SHOTS) {
   // Not 'networkidle': the dev server keeps HMR traffic open and the first

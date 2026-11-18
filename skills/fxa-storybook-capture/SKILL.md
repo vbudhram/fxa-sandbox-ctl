@@ -104,7 +104,10 @@ numeric prefix on the slug so the files sort:
 It writes `/workspace/.fxa-auto-media/<slug>.png` for each story, and shoots the
 story root, not the viewport. It stops with an error when a story renders a
 Storybook error box or renders empty, so a failed bundle never becomes a
-screenshot. Add `--dry-run` to print the shots without a browser. Step 0
+screenshot. Add `--high-contrast` or `--forced-colors` to emulate
+`prefers-contrast: more` or `forced-colors: active`. This is not Windows High
+Contrast Mode: only the media queries match, and Firefox keeps the page colors.
+Add `--dry-run` to print the shots without a browser. Step 0
 confirmed the firefox binary; the script resolves `playwright` from the repo
 root, so install nothing.
 

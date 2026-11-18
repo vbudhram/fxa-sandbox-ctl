@@ -13,5 +13,7 @@ npx playwright install-deps firefox chromium
 # The verification skill trims each recording's blank lead and extracts review
 # frames with ffmpeg. Playwright ships its own ffmpeg for recording only.
 apt-get install -y --no-install-recommends ffmpeg
+# The Nova font stack is "Segoe UI", "Ubuntu Sans", Roboto: without these a Nova screenshot renders in DejaVu Sans.
+apt-get install -y --no-install-recommends fonts-ubuntu fonts-roboto
 
 echo "==> Playwright system dependencies installed."

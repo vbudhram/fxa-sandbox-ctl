@@ -91,7 +91,7 @@ fxa_start="$(sed -n "/^cat > \/usr\/local\/bin\/fxa-start <<'FXASTART'$/,/^FXAST
 "$fc" ssh 0 'sudo tee /usr/local/bin/fxa-start > /dev/null && sudo chmod 755 /usr/local/bin/fxa-start' <<< "$fxa_start"
 # The image has no apt lists: without the update, the install finds no package, and each boot
 # then installs dnsmasq itself (about 30 s).
-"$fc" ssh 0 'sudo bash -c "apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq make perl unzip watchman dnsmasq-base" > /dev/null 2>&1' \
+"$fc" ssh 0 'sudo bash -c "apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq make perl unzip watchman dnsmasq-base fonts-ubuntu fonts-roboto" > /dev/null 2>&1' \
   || echo "WARN: the snapshot's packages did not install; each boot installs dnsmasq itself"
 # Firefox, so a session can change it and hand back a diff (15-firefox.sh, which the GCE image runs too).
 # A failure keeps the snapshot's earlier build and never blocks the FxA refresh.

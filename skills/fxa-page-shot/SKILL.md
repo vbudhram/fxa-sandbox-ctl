@@ -19,6 +19,7 @@ Options:
   The default is `none`.
 - `--viewport WxH`: repeat it for more sizes. The default is 1280x720.
 - `--locale de`, `--dark`: set the browser language and the color scheme.
+- `--high-contrast`, `--forced-colors`: emulate `prefers-contrast: more` and `forced-colors: active`. This is not Windows High Contrast Mode: only the media queries match, and Firefox does not swap the page colors for system colors.
 - `--selector css`: shoot only that element. The default is the full page.
 - `--wait-for css`: wait for that element before the shot.
 
@@ -29,7 +30,7 @@ What it does:
    `getFirefoxUserPrefs`, `getReactFeatureFlagUrl` and `getTotpCode`.
 3. It opens the route in Firefox with the same base URL, prefs and React flags
    as the functional tests.
-4. It writes `<route>-<account>-<WxH>[-<locale>][-dark].png` to
+4. It writes `<route>-<account>-<WxH>[-<locale>][-dark][-hc][-forced].png` to
    `/workspace/.fxa-auto-media/` and prints each path. That folder posts to the thread.
 
 On a failure it saves `<name>-FAILED.png` and prints the current URL. Read
