@@ -81,7 +81,8 @@ check("a dependency fix is in Recently completed and on the routine filter", (1,
 # Another team's run: not in the FxA snapshot, so its own PR link and GitHub give the number, title and merged state.
 calls = []
 class Done: stdout = "fix(syncstorage): keep modified\tmerged\n"
-def fake_run(args, **kw): calls.append(args); return Done()
+envs = []
+def fake_run(args, **kw): calls.append(args); envs.append((kw.get("env") or {}).get("FXA_PIPELINE")); return Done()
 real_run, server.subprocess.run = server.subprocess.run, fake_run
 st = [{"at": iso(110), "src": "pipeline", "key": "STOR-460", "end": int(now - 20), "kind": "fix", "usd": 3.6, "min": 33, "pr": True, "prn": 2707, "prr": "mozilla-services/syncstorage-rs", "profile": "sync-storage"}]
 sr = lambda: server.recent_runs(st, snap, int(now), 20, 7, t + "/state", t + "/sess", lambda team: False, True)[0]
@@ -89,6 +90,15 @@ check("another team's PR links to its own repo, with GitHub's title and merged s
       (lambda x: (x["outcome"], x["pr_number"], x["pr_state"], x["pr_url"], x["title"]))(sr()))
 sr()
 check("a merged PR is asked of GitHub once, then cached", 1, len(calls))
+check("gh asks with the run's own team's App token", ["sync-storage"], envs)
+class Denied: stdout = ""
+server.subprocess.run = lambda args, **kw: (calls.append(args), Denied())[1]
+priv = [dict(st[0], key="PRIV-9", prn=345, prr="mozilla/fxa-private", profile="fxa-private")]
+pr = lambda at: server.recent_runs(priv, snap, at, 20, 7, t + "/state", t + "/sess", lambda team: False, True)[0]
+calls.clear(); pr(int(now)); pr(int(now) + 60)
+check("a failed lookup (a repo gh cannot read) is not asked again for 10 min", 1, len(calls))
+pr(int(now) + 601)
+check("a failed lookup is asked again after 10 min", 2, len(calls))
 server.subprocess.run = real_run
 # Another team's secured ticket is marked in that team's own state folder.
 import os; os.makedirs(t + "/teams-state/sync-storage", exist_ok=True); open(t + "/teams-state/sync-storage/STOR-460.secured-noted", "w").close()

@@ -329,20 +329,24 @@ PR_INFO = {}   # (repo, number) -> (fetched_at, title, state)
 PR_REPO = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 
 
-def pr_info(repo, num, now, budget):
+def pr_info(repo, num, now, budget, team="fxa"):
     """A PR's title and state (open, merged or closed) from GitHub, for a run the FxA snapshot does not know (another
-    team's). A merged or closed PR is cached for good, an open one for 10 min; budget[0] caps the lookups of one request."""
+    team's). A merged or closed PR is cached for good, an open one or a failed lookup for 10 min; budget[0] caps the lookups
+    of one request. team: whose App token gh uses, since each team's token reads only that team's repos."""
     c = PR_INFO.get((repo, num))
-    if c and (c[2] != "open" or now - c[0] < 600):
+    if c and (c[2] not in ("open", None) or now - c[0] < 600):
         return c[1], c[2]
     if budget[0] <= 0 or not PR_REPO.fullmatch(repo or "") or not isinstance(num, int):
         return (c[1], c[2]) if c else (None, None)
     budget[0] -= 1
     try:
         out = subprocess.run(["gh", "api", f"repos/{repo}/pulls/{num}", "--jq", '[.title, (if .merged then "merged" else .state end)] | @tsv'],
-                             capture_output=True, text=True, timeout=5)
+                             capture_output=True, text=True, timeout=5,
+                             env=dict(os.environ, FXA_PIPELINE=team) if re.fullmatch(TEAM_NAME, team or "") else None)
         title, state = out.stdout.rstrip("\n").split("\t")
     except (OSError, subprocess.SubprocessError, ValueError):
+        # A repo the gh login cannot read fails every time: without this, each request waits on it again.
+        PR_INFO[(repo, num)] = (now, c[1], c[2]) if c else (now, None, None)
         return (c[1], c[2]) if c else (None, None)
     PR_INFO[(repo, num)] = (now, title, state)
     return title, state
@@ -406,7 +410,7 @@ def recent_runs(rows, snap, now, limit, days, state_dir, sess_dir, hide, admin=F
             elif r.get("pr") and r.get("prn"):
                 # Another team's run: the FxA snapshot does not know it, so the row's own PR link and GitHub name it.
                 num = r["prn"]
-                t, state = pr_info(r.get("prr") or repo, num, now, budget)
+                t, state = pr_info(r.get("prr") or repo, num, now, budget, team)
                 if t and title == key:
                     title = t
             outcome = "pr" if r.get("pr") else "no_pr"
