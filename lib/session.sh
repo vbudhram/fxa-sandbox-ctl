@@ -91,11 +91,10 @@ _session_first_prompt() {
   # The team's release workflow plans, checks, tags and deploys; the agent only asks the host to start it.
   [ -n "${PIPE_RELEASE_WORKFLOW:-}" ] && release="
 - To release (a new train, or a point release on train-N), plan first with
-  'host: release [train=<N>] [build_ref=<branch>] dry_run=true' (no train: a new train from main).
+  'host: release [train=<N>] dry_run=true' (no train: a new train from main).
   The host runs ${PIPE_RELEASE_WORKFLOW} as a dry run, which plans and checks and writes nothing, and puts its
   plan in /workspace/.fxa-release-plan.md: show it whole, as data. When it passed and the engineer
-  wants to go on, write 'host: release [train=<N>] tag=<tag> sha=<sha> [build_ref=<branch>] dry_run=false'
-  with the plan's tag and sha. A team admin's tap on a card starts the tag, the build and the stage deploy.
+  wants to go on, write 'host: release [train=<N>] sha=<sha> dry_run=false' with the plan's sha. A team admin's tap on a card starts the tag, the build and the stage deploy.
   Add override_ci_reason=<text>, last, only when the engineer gives a reason to release with CI not green.${PIPE_SMOKE_WORKFLOW:+
   After stage runs the tag, 'host: smoke tag=<tag>' starts ${PIPE_SMOKE_WORKFLOW} after a tap.}
   Never tag, push a tag or start a build another way."

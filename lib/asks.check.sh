@@ -198,6 +198,8 @@ check "the inputs parse, and the reason takes the rest of the line" "train=349|d
   "$(_ask_release_inputs 'release train=349 dry_run=false override_ci_reason=hotfix for FXA-1, CI flake' | paste -sd'|' -)"
 check "a short sha, an unknown input or a bad tag is refused" "1|1|1" \
   "$(_ask_one $k 1 Ana 'release sha=abc' | grep -c 'sha=abc is not a valid sha')|$(_ask_one $k 1 Ana 'release ref=evil' | grep -c 'ref is not an input')|$(_ask_one $k 1 Ana 'smoke tag=latest' | grep -c 'not a valid tag')"
+check "a release takes no tag or build_ref: the plan picks the tag, and main builds" "1|1" \
+  "$(_ask_one $k 1 Ana 'release train=350 tag=v1.350.1' | grep -c 'tag is not an input')|$(_ask_one $k 1 Ana 'release build_ref=main' | grep -c 'build_ref is not an input')"
 check "a dry run passes the gate for a non-admin; a real run and smoke do not" "0|1|1" \
   "$(asks_gate 0 Bo 'release train=349' >/dev/null; echo $?)|$(asks_gate 0 Bo 'release train=349 dry_run=false' >/dev/null; echo $?)|$(asks_gate 0 Bo 'smoke tag=v1.349.4' >/dev/null; echo $?)"
 rgh() { printf '%s|%s\n' "${GH_TOKEN:-}" "$*" >> "$tmp/gh"
@@ -205,14 +207,14 @@ rgh() { printf '%s|%s\n' "${GH_TOKEN:-}" "$*" >> "$tmp/gh"
     *jobs/5/logs*) printf '2026-11-19T20:00:00.1Z ##[group]Run plan\n2026-11-19T20:00:01.1Z ### Release plan: v1.349.4\n2026-11-19T20:00:01.3Z - Commit: x ghp_abcdefghijklmnop\n2026-11-19T20:00:02.1Z ##[group]Run post\n' ;; esac; }
 vm_put() { tar -xzf "$2" -C "$tmp" && echo "put $3" >> "$tmp/vm"; }
 new; : > "$tmp/gh"; : > "$tmp/vm"
-got="$(gh() { rgh "$@"; }; sleep() { :; }; _ask_one $k 0 Bo 'release train=349 build_ref=fix-docker-hub-login')"
+got="$(gh() { rgh "$@"; }; sleep() { :; }; _ask_one $k 0 Bo 'release train=349 sha=0c8976e40f93c55462a37854c9d4432a8917ab60')"
 check "a dry run dispatches once with the inputs and who asked, then puts the plan, masked, on the runner" \
-  "1|tok-for-mozilla/fxa|api -X POST repos/mozilla/fxa/actions/workflows/release-stage.yml/dispatches -f ref=main -f inputs[train]=349 -f inputs[build_ref]=fix-docker-hub-login -f inputs[requested_by]=Bo -F return_run_details=true --jq .workflow_run_id // empty|put /workspace|### Release plan: v1.349.4|- Commit: x ghp_<masked>|0|done: the plan ran (success): https://github.com/mozilla/fxa/actions/runs/77. Read /workspace/.fxa-release-plan.md and show it." \
+  "1|tok-for-mozilla/fxa|api -X POST repos/mozilla/fxa/actions/workflows/release-stage.yml/dispatches -f ref=main -f inputs[train]=349 -f inputs[sha]=0c8976e40f93c55462a37854c9d4432a8917ab60 -f inputs[requested_by]=Bo -F return_run_details=true --jq .workflow_run_id // empty|put /workspace|### Release plan: v1.349.4|- Commit: x ghp_<masked>|0|done: the plan ran (success): https://github.com/mozilla/fxa/actions/runs/77. Read /workspace/.fxa-release-plan.md and show it." \
   "$(grep -c dispatches "$tmp/gh")|$(grep dispatches "$tmp/gh")|$(cat "$tmp/vm")|$(sed -n 2p "$tmp/.fxa-release-plan.md")|$(sed -n 3p "$tmp/.fxa-release-plan.md")|$(grep -c 'Run post' "$tmp/.fxa-release-plan.md")|$got"
 new; : > "$tmp/gh"; asks_role "$k" 1 Ana; words "release train 349 dry_run=false now"
-( gh() { rgh "$@"; }; _ASKS_NO_JOB=1 asks_take "$k" '[{"type":"turn_end","asks":["release train=349 tag=v1.349.4 sha=0c8976e40f93c55462a37854c9d4432a8917ab60 dry_run=false"]}]'; session_asks "$k" )
+( gh() { rgh "$@"; }; _ASKS_NO_JOB=1 asks_take "$k" '[{"type":"turn_end","asks":["release train=349 sha=0c8976e40f93c55462a37854c9d4432a8917ab60 dry_run=false"]}]'; session_asks "$k" )
 c="$(ls "$tmp/$k".confirm-* 2>/dev/null | head -1)"
-check "a real run is never run from an admin's words: it waits on a card with the workflow's blob" "0|1|mozilla/fxa release-stage.yml@aaaaaaaaaaaa on main: train=349 tag=v1.349.4 sha=0c8976e40f93c55462a37854c9d4432a8917ab60 dry_run=false" \
+check "a real run is never run from an admin's words: it waits on a card with the workflow's blob" "0|1|mozilla/fxa release-stage.yml@aaaaaaaaaaaa on main: train=349 sha=0c8976e40f93c55462a37854c9d4432a8917ab60 dry_run=false" \
   "$(grep -c dispatches "$tmp/gh")|$(ls "$tmp/$k".confirm-* | grep -c .)|$(jq -r .target "$c")"
 n="${c##*confirm-}"; s="$(jq -r .sha "$c")"; : > "$tmp/gh"
 got="$(gh() { BLOB=bbbbbbbbbbbbbbbb rgh "$@"; }; asks_confirm "$k" "$n" "$s" allow Ana 1)"

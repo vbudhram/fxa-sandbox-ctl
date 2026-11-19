@@ -264,10 +264,10 @@ _ask_rerun() {
   echo "done: reran the failed jobs of ${n} CI run(s) on ${url}."
 }
 
-# A release ask: 'release train=<N> [tag=..] [sha=..] [build_ref=..] [dry_run=true|false] [override_ci_reason=<text>]'
+# A release ask: 'release train=<N> [sha=..] [dry_run=true|false] [override_ci_reason=<text>]' (the plan picks the tag)
 # or 'smoke tag=<tag>'. It dispatches only the workflows the team record names, on the team's work repo; the
 # workflow does every release check itself. The reason is last, and takes the rest of the line.
-_ASK_RELEASE_KEYS='train tag sha build_ref dry_run override_ci_reason'
+_ASK_RELEASE_KEYS='train sha dry_run override_ci_reason'
 
 # _ask_release_inputs <line>   The workflow inputs, one "key=value" a line; fails with the refusal.
 _ask_release_inputs() {
@@ -281,9 +281,9 @@ _ask_release_inputs() {
     else v="${rest#*=}"; v="${v%% *}"; rest="${rest#*=}"; [[ "$rest" == *" "* ]] && rest="${rest#* }" || rest=""; fi
     case "$action:$k" in
       release:train) [[ "$v" =~ ^[1-9][0-9]{0,4}$ ]] ;;
-      release:tag|smoke:tag) [[ "$v" =~ ^v[0-9]{1,4}\.[0-9]{1,5}\.[0-9]{1,5}(-rc[0-9]{1,3})?$ ]] ;;
+      smoke:tag) [[ "$v" =~ ^v[0-9]{1,4}\.[0-9]{1,5}\.[0-9]{1,5}(-rc[0-9]{1,3})?$ ]] ;;
       release:sha) [[ "$v" =~ ^[0-9a-f]{40}$ ]] ;;
-      release:build_ref) [[ "$v" =~ ^[A-Za-z0-9._/-]{1,60}$ ]] ;;
+
       release:dry_run) [[ "$v" =~ ^(true|false)$ ]] ;;
       release:override_ci_reason) [[ "$v" =~ ^[A-Za-z0-9\ ._,:\(\)/#-]{1,200}$ ]] ;;
       *) echo "refused: ${k} is not an input of the ${action} ask."; return 1 ;;
