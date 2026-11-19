@@ -51,6 +51,8 @@ check "an active team: a guide edit stays active, a repo change is refused" "0|1
   "$(jq '.prompts.guide_md = "new"' "$FXA_TEAMS_DIR/ga2.json" > "$tmp/ga2.json"; teams_set ga2 "$tmp/ga2.json" >/dev/null 2>&1; echo $?)|$(jq '.repos += [{slug: "example/more", role: "dep"}]' "$FXA_TEAMS_DIR/ga2.json" > "$tmp/ga2.json"; teams_set ga2 "$tmp/ga2.json" 2>&1 | grep -c 'a change to repos needs a new test')"
 check "an active team: a repo's commits mode (host only) saves with no new test" "0|append" \
   "$(jq '.repos[0].commits = "append"' "$FXA_TEAMS_DIR/ga2.json" > "$tmp/ga2.json"; teams_set ga2 "$tmp/ga2.json" >/dev/null 2>&1; echo $?)|$(jq -r '.repos[0].commits' "$FXA_TEAMS_DIR/ga2.json")"
+check "an active team: a release block (host only) saves with no new test" "0|release-stage.yml" \
+  "$(jq '.release = {workflow: "release-stage.yml"}' "$FXA_TEAMS_DIR/ga2.json" > "$tmp/ga2.json"; teams_set ga2 "$tmp/ga2.json" >/dev/null 2>&1; echo $?)|$(jq -r '.release.workflow' "$FXA_TEAMS_DIR/ga2.json")"
 check "disable works while the live checks fail" "0|disabled" \
   "$( (_teams_live() { [ "${FXA_TEAMS_LIVE:-1}" = 1 ] || return 0; echo "ERROR: down" >&2; return 1; }; FXA_TEAMS_LIVE=1 teams_status ga2 disabled >/dev/null 2>&1; echo $?) )|$(jq -r .status "$FXA_TEAMS_DIR/ga2.json")"
 check "Disable does not carry the pass, so a later enable needs a new test" "differs" \

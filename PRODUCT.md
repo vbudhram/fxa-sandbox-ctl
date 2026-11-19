@@ -317,6 +317,9 @@ that works. It shows no dollar amounts to people; cost is the operator's view.
    are the team's. Code, credentials, guards, ceilings and access to the live bot are the operator's.
 5. **Does it need a person?** Anything that changes IAM, secrets, the live bot's access, GitHub settings
    or a published artifact needs the operator's explicit go. Do not decide it yourself.
+   One exception: a team admin's tap on a release card may start the team's own release workflow,
+   the one the team record's `release` block names. It may tag and publish the team's release to stage.
+   The workflow's own checks are the guard, and prod stays a person's step.
 6. **Is there already a way?** Reuse the existing command, setting or pattern before you add one.
 
 ### Defaults for common decisions

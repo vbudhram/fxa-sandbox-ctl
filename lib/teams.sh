@@ -302,13 +302,13 @@ teams_people_import() {
 }
 
 # _teams_runner_keys <old.json> <new.json>   The top-level keys that changed, other than the ones a
-# runner never reads (text, people, caps, Jira, PR rules, stamps).
+# runner never reads (text, people, caps, Jira, PR rules, release, stamps).
 _teams_runner_keys() {
   # repos[].commits is read on the host only (finish), so it needs no new runner test.
   jq -nr --slurpfile a "$1" --slurpfile b "$2" 'def host: if (.repos | type) == "array" then .repos |= map(if type == "object" then del(.commits) else . end) else . end;
     ($a[0] | host) as $o | ($b[0] | host) as $n
     | [(($o | keys) + ($n | keys)) | unique[]
-       | select(IN("schema", "name", "label", "status", "admins", "access", "jira", "pr", "caps", "prompts", "people", "created", "updated") | not)
+       | select(IN("schema", "name", "label", "status", "admins", "access", "jira", "pr", "caps", "prompts", "people", "release", "created", "updated") | not)
        | select($o[.] != $n[.])] | join(" ")'
 }
 

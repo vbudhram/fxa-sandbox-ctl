@@ -342,4 +342,14 @@ check "a record's channels reach PIPE_SLACK_CHANNELS; no channels, no key" "C012
 # The gh wrapper mints its token for $FXA_PIPELINE's repo, so the entry point exports it for a team that opens PRs.
 check "the entry point exports FXA_PIPELINE when the team opens PRs" "1" "$(grep -c '^  \[ "${PIPE_PR_OPEN:-1}" = 0 \] || export FXA_PIPELINE$' "$root/fxa-sandbox-ctl")"
 
+# release: the workflows the host may dispatch for an agent's release ask.
+rl='{ "schema": 1, "name": "rl", "repos": [ { "slug": "mozilla/fxa-private", "role": "work" } ], "stack": { "kind": "fxa", "repo": "mozilla/fxa-private" },
+  "release": { "workflow": "release-stage.yml", "smoke_workflow": "smoke-stage.yml" } }'
+rlbad() { bad rl "$(jq -c "$1" <<< "$rl")" | grep -c "$2"; }
+check "a release block loads; a missing or bad workflow, a bad smoke workflow or another key is refused" "0|1|1|1|1" \
+  "$(bad rl "$rl" | grep -c .)|$(rlbad 'del(.release.workflow)' 'release.workflow must be')|$(rlbad '.release.workflow = "../x.yml"' 'release.workflow must be')|$(rlbad '.release.smoke_workflow = "smoke"' 'release.smoke_workflow must be')|$(rlbad '.release.repo = "x/y"' 'release.repo is not a known key')"
+printf '%s' "$rl" > "$T/rl.json"
+check "the release workflows reach pipeline_load; a team with none gets neither" "release-stage.yml|smoke-stage.yml|0" \
+  "$(loaded rl | sed -n "s/^PIPE_RELEASE_WORKFLOW=//p")|$(loaded rl | sed -n "s/^PIPE_SMOKE_WORKFLOW=//p")|$(loaded rusty | grep -c '^PIPE_RELEASE_WORKFLOW=')"
+
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

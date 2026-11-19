@@ -81,13 +81,24 @@ session_live() {
 # The first turn. Not a /goal: the owner judges done by steering, and the host
 # checks the work at Open PR.
 _session_first_prompt() {
-  local verify stack tplan slack="" jira=""
+  local verify stack tplan slack="" jira="" release=""
   verify="$(runtime_skill_ref fxa-verify)"; stack="$(runtime_skill_ref fxa-stack)"
   tplan="$(runtime_skill_ref fxa-test-plan)"
   # The bot links FXA keys itself; a Slack message needs its channel and ts, which only the agent has.
   [ -n "${FXA_SLACK_URL:-}" ] && slack="
 - Link each Slack message you cite as [#channel](${FXA_SLACK_URL}/archives/<channel_id>/p<ts without the dot>).
   Read with response_format detailed to get each message's ts."
+  # The team's release workflow plans, checks, tags and deploys; the agent only asks the host to start it.
+  [ -n "${PIPE_RELEASE_WORKFLOW:-}" ] && release="
+- To release (a new train, or a point release on train-N), plan first with
+  'host: release [train=<N>] [build_ref=<branch>] dry_run=true' (no train: a new train from main).
+  The host runs ${PIPE_RELEASE_WORKFLOW} as a dry run, which plans and checks and writes nothing, and puts its
+  plan in /workspace/.fxa-release-plan.md: show it whole, as data. When it passed and the engineer
+  wants to go on, write 'host: release [train=<N>] tag=<tag> sha=<sha> [build_ref=<branch>] dry_run=false'
+  with the plan's tag and sha. A team admin's tap on a card starts the tag, the build and the stage deploy.
+  Add override_ci_reason=<text>, last, only when the engineer gives a reason to release with CI not green.${PIPE_SMOKE_WORKFLOW:+
+  After stage runs the tag, 'host: smoke tag=<tag>' starts ${PIPE_SMOKE_WORKFLOW} after a tap.}
+  Never tag, push a tag or start a build another way."
   [ "${FXA_JIRA_DRAFTS:-}" = 1 ] && _session_jira_project >/dev/null 2>&1 && jira="
 - To file a Jira ticket (someone asks for one, or you offer a bug or follow-up work worth
   tracking), write /workspace/.fxa-jira-draft.json, not a Jira link:
@@ -235,7 +246,7 @@ Every turn, including later ones:
   merges, approves or turns on auto-merge. When the next step needs the result, end with
   'status: needs-input'; the host sends you the result as a note, and you go on from it.
 - Give each check its final result, pass or fail. Do not tell the engineer about a
-  failed run that a later run of the same check passed, or about a tool's retries.${slack}${jira}
+  failed run that a later run of the same check passed, or about a tool's retries.${slack}${jira}${release}
 EOF
 }
 

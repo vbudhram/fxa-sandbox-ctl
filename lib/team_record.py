@@ -40,9 +40,11 @@ ALIAS = re.compile(r"^[a-z0-9][a-z0-9-]{1,29}$")
 # here, so both take only a literal subset that means the same in every dialect and cannot be slow.
 SPRINT = re.compile(r"^\^?[A-Za-z0-9 ._:/()-]{1,60}$")
 INFRA = re.compile(r"^[A-Za-z0-9 ._:/()-]{1,80}=[A-Za-z0-9 ._:/()-]{1,120}$")
+WORKFLOW = re.compile(r"^[A-Za-z0-9._-]{1,60}\.ya?ml$")
 
 KEYS = {"schema", "name", "label", "status", "admins", "access", "repos", "stack", "runner",
-        "egress", "mcp", "jira", "pr", "caps", "prompts", "skills", "boot", "secrets", "created", "updated", "people"}
+        "egress", "mcp", "jira", "pr", "caps", "prompts", "skills", "boot", "secrets", "created", "updated", "people",
+        "release"}
 # A record names code only from this repo, where it is reviewed: skills/<name> on the catalog, and
 # boot/<script>.sh pinned by its SHA-256, so an edit to the script needs a new pin.
 REPO = os.environ.get("FXA_TEAM_REPO") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -316,6 +318,13 @@ def check(rec, name=None):
     if "reviewers" in pr and not REVIEWERS.fullmatch(str(pr["reviewers"])):
         bad.append("pr.reviewers must be a GitHub team or user name")
 
+    # release: the only workflows of the work repo that the host dispatches for an agent's release ask.
+    if "release" in rec:
+        rel = obj(rec["release"], "release", {"workflow", "smoke_workflow"})
+        for k in ("workflow", "smoke_workflow"):
+            if (k in rel or k == "workflow") and (not isinstance(rel.get(k), str) or not WORKFLOW.fullmatch(rel[k])):
+                bad.append(f"release.{k} must be a workflow file name, for example release-stage.yml")
+
     caps = obj(rec.get("caps", {}), "caps", {"launches_per_day", "usd_per_day", "usd_per_month", "runners"})
     if "runners" in caps:
         most, v = ceiling("TEAM_CAP_RUNNERS", 8), caps["runners"]
@@ -469,6 +478,11 @@ def env(rec):
     # The Slack connector reads the team's own channels, not FxA's (the gateway's team_rules).
     if rec.get("access", {}).get("channels"):
         yield "PIPE_SLACK_CHANNELS", " ".join(rec["access"]["channels"])
+    # The release and smoke ask verbs dispatch only these (lib/asks.sh).
+    if rec.get("release"):
+        yield "PIPE_RELEASE_WORKFLOW", rec["release"]["workflow"]
+        if rec["release"].get("smoke_workflow"):
+            yield "PIPE_SMOKE_WORKFLOW", rec["release"]["smoke_workflow"]
     jira = rec.get("jira", {})
     if jira.get("project"):
         yield "PIPE_JIRA_PROJECT", jira["project"]
