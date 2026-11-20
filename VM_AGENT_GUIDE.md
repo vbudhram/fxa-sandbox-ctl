@@ -181,10 +181,12 @@ use `/fxa-verify --run --plan /workspace/.fxa-test-plan.json`. It runs the
 planned tests, then the related specs and lint for each changed package, and
 only for the files you changed. With no file paths it also
 checks changes an earlier run left on the slot, so read `git status` first.
-After a fix, rerun only what failed with `/fxa-verify --failed`. Run the full
-`--run` once more before the handoff. Also run it again after a check by hand that
-copies a file away and back: the copy changes the file time, and the handoff
-check then calls the verdict stale.
+After a fix, use `/fxa-verify --stale`. It reruns the failed rows and the rows of
+each file that changed after the last verdict, and keeps the other verdicts. Do
+not run the full `--run` again before the handoff. Run `--stale` once more if a
+file changed after the last verdict, for example after a check by hand that copies
+a file away and back: the copy changes the file time, and the handoff check then
+calls the verdict stale.
 To prove that a test catches the bug, use `/fxa-verify --revert <spec>`. Do not
 use `git stash`. To run one spec, use
 `bash ~/.claude/skills/fxa-verify/verify.sh --run --no-lint --no-types <spec>`.

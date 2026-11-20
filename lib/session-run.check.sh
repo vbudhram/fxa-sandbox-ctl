@@ -244,6 +244,9 @@ check "the first prompt says how a stack ships, and to give each check its final
 # A clear change request ships itself, and the agent does not end with an offer or a confirm.
 check "the first prompt ships an asked-for change and acts on a clear request" "1|1|1" \
   "$(SANDBOX_ROOT="$(cd "$(dirname "$0")/.." && pwd)" _session_first_prompt | grep -c 'When the engineer asked for a code change')|$(SANDBOX_ROOT="$(cd "$(dirname "$0")/.." && pwd)" _session_first_prompt | grep -c '^- Act on a clear request')|$(SANDBOX_ROOT="$(cd "$(dirname "$0")/.." && pwd)" _session_first_prompt | grep -c 'take it and say so in one line')"
+# A turn with no code change runs no tests; a code change reruns only the stale rows.
+check "the first prompt: no tests for a turn with no change, --stale after a fix" "1|1|1" \
+  "$(SANDBOX_ROOT="$(cd "$(dirname "$0")/.." && pwd)" _session_first_prompt | grep -c 'changes no file in the repo needs no test plan')|$(SANDBOX_ROOT="$(cd "$(dirname "$0")/.." && pwd)" _session_first_prompt | grep -c '/fxa-verify --stale')|$(SANDBOX_ROOT="$(cd "$(dirname "$0")/.." && pwd)" _session_first_prompt | grep -c 'turn changed no code')"
 check "the first prompt names !usage and runs nothing" "1|" "$(SANDBOX_ROOT="$(cd "$(dirname "$0")/.." && pwd)" _session_first_prompt 2>"$tmp/fp.err" | grep -c 'point to `!usage`')|$(cat "$tmp/fp.err")"
 
 # The live file count comes from git on the runner, so edits made with a script count too.

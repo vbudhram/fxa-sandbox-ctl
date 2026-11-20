@@ -190,8 +190,8 @@ find . -path ./node_modules -prune -o -newer .fxa-verify-verdict.txt -type f \
   \( -name '*.ts' -o -name '*.tsx' -o -name '*.js' \) -print | grep -v node_modules | head
 ```
 
-- A file listed by `find` changed after the verdict: run `/fxa-verify --run
-  --plan /workspace/.fxa-test-plan.json` again.
+- A file listed by `find` changed after the verdict: run `/fxa-verify --stale`.
+  It reruns only the rows of the changed files, not the full plan.
 - The verdict has a `FAIL` or a `NONE` line: fix it, or say in the PR body why
   it is outside the change.
 - A `TODO` line (Storybook): run `/fxa-storybook-capture` and list the files in

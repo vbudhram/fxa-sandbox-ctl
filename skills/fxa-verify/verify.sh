@@ -3,6 +3,7 @@
 #   verify.sh [--run] [--no-types] [--no-lint] [--plan <test-plan.json>] [file...]
 #   verify.sh --revert [test file...]   the tests fail without the fix, pass with it
 #   verify.sh --failed   rerun only the rows that failed or ran nothing last time
+#   verify.sh --stale    as --failed, plus the rows of each file changed after the last verdict
 #   verify.sh --bg <the options above>   start that run in the background
 #   verify.sh wait [seconds]   wait for it (270 s by default, under the cache's 5 min): its verdict,
 #                              "still running" (exit 75), or that it died (exit 4)
@@ -31,10 +32,10 @@ if [ "${1:-}" = wait ]; then
   echo "the run died after ${ran}s without a verdict. Last lines:"; tail -5 "${job}/log"; exit 4
 fi
 cd "${FXA_WORKSPACE:-/workspace}" || exit 2
-RUN=0 TYPES=1 LINT=1 MAX_RELATED=15 REVERT=0 FAILED=0
+RUN=0 TYPES=1 LINT=1 MAX_RELATED=15 REVERT=0 FAILED=0 STALE=0
 files=() PLAN=""
 while [ $# -gt 0 ]; do
-  case "$1" in --run) RUN=1 ;; --types) TYPES=1 ;; --no-types) TYPES=0 ;; --no-lint) LINT=0 ;; --plan) PLAN="${2:?--plan needs a file}"; shift ;; --revert) REVERT=1 ;; --failed) FAILED=1 ;; *) files+=("$1") ;; esac
+  case "$1" in --run) RUN=1 ;; --types) TYPES=1 ;; --no-types) TYPES=0 ;; --no-lint) LINT=0 ;; --plan) PLAN="${2:?--plan needs a file}"; shift ;; --revert) REVERT=1 ;; --failed) FAILED=1 ;; --stale) STALE=1 ;; *) files+=("$1") ;; esac
   shift
 done
 given=${#files[@]} VSTART=$(date +%s)
@@ -47,7 +48,7 @@ fi
 export NODE_OPTIONS="--max-old-space-size=4096 ${NODE_OPTIONS:-}"
 # Two runs at once share the log dir and the tree. Fd 9 holds the lock; each command
 # closes it (9>&-), so a daemon that a row starts cannot keep the lock.
-if [ "$RUN$REVERT$FAILED" != 000 ] && command -v flock >/dev/null; then
+if [ "$RUN$REVERT$FAILED$STALE" != 0000 ] && command -v flock >/dev/null; then
   lockf="${TMPDIR:-/tmp}/fxa-verify-$(id -u).lock"; exec 9>"$lockf"
   flock -n 9 || { echo "ERROR: another fxa-verify run holds $lockf. Wait for it to end, then run again."; exit 75; }
 fi
@@ -338,14 +339,24 @@ plan=("${kept[@]}")
 
 # --failed: rerun only last time's FAIL and NONE rows; the other rows keep last
 # time's verdict. A row file beside the verdict holds each row's command.
+# --stale also reruns each row whose command names a file changed after the verdict,
+# and plans the related specs of a changed file that no row names.
 ROWS=/workspace/.fxa-verify-rows.tsv kept_rows=()
-if [ "$FAILED" = 1 ]; then
+if [ "$FAILED$STALE" != 00 ]; then
   [ -s "$ROWS" ] || { echo "No earlier run to rerun. Run: bash $0 --run"; exit 2; }
+  stale=() named=()
+  if [ "$STALE" = 1 ]; then for f in "${files[@]}"; do [ "$f" -nt /workspace/.fxa-verify-verdict.txt ] && stale+=("$f"); done; fi
   plan=()
   while IFS=$'\t' read -r v entry line; do
-    case "$v" in FAIL|NONE) plan+=("$entry") ;; *) kept_rows+=("$v"$'\t'"$entry"$'\t'"$line") ;; esac
+    re=0; case "$v" in FAIL|NONE) re=1 ;; esac
+    IFS='|' read -r _ d c <<<"$entry"
+    for f in ${stale[@]+"${stale[@]}"}; do
+      case " $c " in *" ${f#"$d"/} "*|*" ${f#packages/functional-tests/} "*) re=1; named+=("$f") ;; esac; done
+    if [ "$re" = 1 ]; then plan+=("$entry"); else kept_rows+=("$v"$'\t'"$entry"$'\t'"$line"); fi
   done < "$ROWS"
-  [ "${#plan[@]}" -gt 0 ] || { echo "Nothing failed in the last run."; exit 0; }
+  new=(); for f in ${stale[@]+"${stale[@]}"}; do printf '%s\n' ${named[@]+"${named[@]}"} | grep -qxF -- "$f" || new+=("$f"); done
+  [ "${#new[@]}" -gt 0 ] && plan_files "net " "${new[@]}"
+  [ "${#plan[@]}" -gt 0 ] || { echo "Nothing failed in the last run$([ "$STALE" = 1 ] && echo ', and no file changed after it')."; exit 0; }
   RUN=1
 fi
 
@@ -381,13 +392,14 @@ for r in ${kept_rows[@]+"${kept_rows[@]}"}; do results+=("${r##*$'\t'}"); done
 echo; echo "Verdict:"; printf '  %s\n' "${results[@]}"
 # After the table, so a run piped to tail still shows why each row failed.
 for fl in ${failed_logs[@]+"${failed_logs[@]}"}; do echo; echo "---- ${fl%%|*} failed; last lines:"; tail -15 "${fl#*|}"; done
-[ "$fail" = 0 ] || { echo; echo "Next: fix the failure, then rerun only the failed rows: bash $0 --failed"; }
+[ "$fail" = 0 ] || { echo; echo "Next: fix the failure, then rerun the failed and changed rows: bash $0 --stale"; }
 # The record the self-check and the PR body read. .fxa- keeps it out of the commit.
 note=""; [ "$FAILED" = 1 ] && note=" (reran ${#plan[@]} failed row(s); ${#kept_rows[@]} kept from the last run)"
+[ "$STALE" = 1 ] && note=" (reran ${#plan[@]} failed or changed row(s); ${#kept_rows[@]} kept from the last run)"
 { echo "fxa-verify $(date -u +%FT%TZ)${PLAN:+ plan=$PLAN}${note}"; printf '%s\n' "${results[@]}"; } > /workspace/.fxa-verify-verdict.txt
 { for i in "${!plan[@]}"; do printf '%s\t%s\t%s\n' "${results[$i]%% *}" "${plan[$i]}" "${results[$i]}"; done
   for r in ${kept_rows[@]+"${kept_rows[@]}"}; do printf '%s\n' "$r"; done; } > "$ROWS"
 # One line per run, for the host's metrics: what ran, what failed, how long.
-printf '{"at":%s,"mode":"%s","rows":%s,"fail":%s,"secs":%s}\n' "$(date +%s)" "$([ "$FAILED" = 1 ] && echo failed || echo full)" \
+printf '{"at":%s,"mode":"%s","rows":%s,"fail":%s,"secs":%s}\n' "$(date +%s)" "$([ "$STALE" = 1 ] && echo stale || { [ "$FAILED" = 1 ] && echo failed; } || echo full)" \
   "${#plan[@]}" "$(printf '%s\n' "${results[@]}" | grep -c '^FAIL')" "$(( $(date +%s) - VSTART ))" >> /workspace/.fxa-verify-runs.jsonl 2>/dev/null || true
 exit "$fail"

@@ -52,7 +52,9 @@ There is no `/goal`. A person steers you turn by turn.
 - Your first turn investigates, writes a test plan with `/fxa-test-plan`, and
   prints a short plan: the cause, the files you will change and how you will
   verify. Then make the change and verify it. Nobody approves the plan first.
-  A question or an investigation needs no plan.
+  A turn that changes no file in the repo needs no test plan, no tests and no
+  review. Examples are an answer, an investigation, a PR comment, a PR body, a
+  Jira description, and a `host:` line.
 - A demo or a prototype that changes nothing under `packages/` needs no
   `/fxa-test-plan` and no `/fxa-verify`. Check it with its own small test, such
   as a script that signs in and checks the result.
@@ -68,7 +70,8 @@ There is no `/goal`. A person steers you turn by turn.
   words that says what you do next, such as "Running the delete account tests."
   Do not write more notes than that, and do not repeat the todo list.
 - End every turn with `status: needs-input` or `status: ready`. Use `ready`
-  when the change is done and its tests pass, or when it is done and no check
+  when the change is done and its tests pass, when the turn changed no code,
+  or when it is done and no check
   can run here: then name what you could not run and what the person should
   run. Use `needs-input` only with a question the person must answer. The final message is all the
   person sees: put the answer or the questions above the status line, never only

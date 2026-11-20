@@ -12,7 +12,8 @@ included), plans one command per package, and with `--run` runs them:
     bash ~/.claude/skills/fxa-verify/verify.sh --run       # run it, print the verdict
     bash ~/.claude/skills/fxa-verify/verify.sh --run --no-types   # skip the type-check for a quick rerun
     bash ~/.claude/skills/fxa-verify/verify.sh --run --plan /workspace/.fxa-test-plan.json
-    bash ~/.claude/skills/fxa-verify/verify.sh --failed    # after a fix: rerun only what failed
+    bash ~/.claude/skills/fxa-verify/verify.sh --stale     # after a fix: rerun what failed and what changed
+    bash ~/.claude/skills/fxa-verify/verify.sh --failed    # rerun only what failed, for a flaky row
 
 A `--run` with `--plan`, or with a functional spec, can take longer than 4.5
 minutes. Start it with `--bg`, then call `wait` until it gives the verdict:
@@ -21,14 +22,19 @@ minutes. Start it with `--bg`, then call `wait` until it gives the verdict:
     bash ~/.claude/skills/fxa-verify/verify.sh wait   # verdict and exit code; 75: still running, call it again
 
 `wait` returns at once when the run ends or dies. Do not wait with your own
-`pgrep` or `tail --pid`. A short run, such as `--failed` on unit rows, can run in
+`pgrep` or `tail --pid`. A short run, such as `--stale` on unit rows, can run in
 the foreground. Only one run can write logs at a time: a second run exits 75 and
 says so.
 
-After you fix a failure, use `--failed`. It reruns only the rows that failed or
-ran no tests last time, and keeps the other rows' verdicts. A full rerun repeats
-every planned spec, the functional ones too. Before the handoff, run the full
-`--run` once, because a fix can break a row that passed before.
+After you fix a failure, use `--stale`. It reruns the rows that failed or ran no
+tests last time, and each row whose command names a file that changed after the
+last verdict. A changed file that no row names gets its related specs (`net`
+lines). The other rows keep their verdicts. `--failed` reruns only the failed
+rows and does not look at changed files. Before the handoff, run `--stale` again
+if a file changed after the last verdict. Do not run the full `--run` again: it
+repeats every planned spec, the functional ones too. A plan `check` line names
+no file, so `--stale` keeps its verdict: rerun it by hand if your fix changed
+what it checks.
 
 With `--plan` it first runs the specs your test plan names (`plan` lines; see
 `/fxa-test-plan`), then the related specs of the changed files (`net` lines),
