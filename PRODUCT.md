@@ -350,7 +350,7 @@ that works. It shows no dollar amounts to people; cost is the operator's view.
 - Monitor's sign-in uses a local FxA stack in the runner, so no credential enters the runner.
 - Memory: agents propose, people approve, and memory is scoped by repo first. A run on a private repo
   saves nothing to shared memory.
-- Private repos: no agent fetch after start, a full clone, code only in private channels, no watch page.
+- Private repos: no agent fetch after start, a full clone, code only in private channels (while the Slack app lacks groups:read, the bot cannot tell, and allows any channel), no watch page.
 - A team with the Jira connector and no Jira project of its own reads FxA's Jira project, as FxA does.
   Most teams that work beside FxA need its tickets. A team with a project reads only that project.
 - Team records are the norm for every team. FxA moves to its record behind `FXA_FXA_RECORD=1`, one host at
