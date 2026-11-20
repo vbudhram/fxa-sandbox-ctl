@@ -40,7 +40,7 @@ TEMPLATES = ("code-review", "ux-review", "perf-review", "security-review", "blan
 MODES = ("report", "tickets", "pr", "pr+notes")
 DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 KEYS = {"name", "template", "prompt", "schedule", "zone", "repos", "branch", "channel", "mode", "max_usd",
-        "skip_no_commits", "env", "on", "pr", "draft", "watch", "model", "effort", "runtime", "jira", "report_as"}
+        "skip_no_commits", "env", "on", "pr", "draft", "watch", "model", "effort", "runtime", "jira", "report_as", "pr_ticket"}
 # The routines that a request starts, not the clock: the host frame is their prompt.
 TRIGGERED = ("pr-label", "jira-label")
 # Unset: the host's model (Opus) and the CLI's default effort. The models are the ones the LLM proxy prices.
@@ -319,6 +319,13 @@ def check(r, team, profile, index, env, count):
         bad.append("skip_no_commits: must be true or false")
     if not isinstance(r.get("draft", True), bool):
         bad.append("draft: must be true or false")
+    # pr_ticket: a Jira ticket in the team's project that the PR closes, to track the PR.
+    if not isinstance(r.get("pr_ticket", False), bool):
+        bad.append("pr_ticket: must be true or false")
+    elif r.get("pr_ticket") and mode not in ("pr", "pr+notes"):
+        bad.append("pr_ticket: Only a routine that opens a PR can file a ticket for it")
+    elif r.get("pr_ticket") and profile.get("secret"):
+        bad.append("pr_ticket: This team's tickets are secret, so a routine does not file them")
     if r.get("env", "live") not in ("live", "dev"):
         bad.append("env: must be live or dev")
     # message: the report itself is the channel post, as a person's daily report is; the run's details go in its thread.

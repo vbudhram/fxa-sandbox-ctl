@@ -31,7 +31,8 @@ function Readback({ d, c }: { d: J; c: Ctl }) {
   if (d.on === 'jira-label')
     return <><b>{d.name || 'This routine'}</b> runs when a team admin adds the <b>{String(d.jira_label).trim() || 'ai-investigate'}</b> label to a Jira ticket of this team. It reads <b>{d.repos.join(', ') || 'no repo yet'}</b>, posts one comment on the ticket, {ch ? <>posts in <b>{chn}</b></> : 'needs a channel for its results'}, and stops at <b>{usd(Number(d.max_usd))}</b> a run.</>;
   const pr = d.draft === false ? 'a regular PR' : 'a draft PR';
-  const mode = ({ report: 'reports', tickets: 'files Jira tickets', pr: `opens ${pr}`, 'pr+notes': `opens ${pr} with notes` } as Record<string, string>)[d.mode] ?? d.mode;
+  const tk = d.pr_ticket ? ' and a Jira ticket that the PR closes' : '';
+  const mode = ({ report: 'reports', tickets: 'files Jira tickets', pr: `opens ${pr}${tk}`, 'pr+notes': `opens ${pr} with notes${tk}` } as Record<string, string>)[d.mode] ?? d.mode;
   return <><b>{d.name || 'This routine'}</b> runs <b>{rtSched(rtRoutine(d))} {rtZoneName(d.zone)}</b> on <b>{d.repos.join(', ') || 'no repo yet'}</b>{d.watch ? <>, for the new commits of <b>{d.watch}</b></> : ''}{d.skip_no_commits ? ', when there are new commits' : ''}. It {mode}{ch ? <>, posts in <b>{chn}</b>,</> : ', posts nothing in Slack (the results are in History),'} and stops at <b>{usd(Number(d.max_usd))}</b> a run.</>;
 }
 
@@ -209,6 +210,11 @@ export function Form({ c }: { c: Ctl }) {
                   </label>
                   <p className="hint m-0">Clear it to open a regular PR. A regular PR asks the code owners for a review at once.</p>
                   {e.draft && <p className="m-0 text-sub font-semibold text-warn" id="rt-draft-err">{e.draft}</p>}
+                  <label className="flex items-center gap-s2">
+                    <input type="checkbox" id="rt-pr-ticket" data-rt="pr_ticket" checked={d.pr_ticket === true} onChange={(ev) => set({ pr_ticket: ev.target.checked })} {...bad('rt-pr-ticket', e.pr_ticket)} /> File a Jira ticket for the PR
+                  </label>
+                  <p className="hint m-0">A task in the team's Jira project, to track the PR. The PR closes it when it merges.</p>
+                  {e.pr_ticket && <p className="m-0 text-sub font-semibold text-warn" id="rt-pr-ticket-err">{e.pr_ticket}</p>}
                 </div>
               )}
             </>}

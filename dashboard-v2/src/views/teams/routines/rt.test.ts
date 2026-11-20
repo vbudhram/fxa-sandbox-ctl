@@ -58,6 +58,20 @@ describe('report_as', () => {
   });
 });
 
+describe('pr_ticket', () => {
+  const r = { ...sched, name: 'T', prompt: 'p', repos: ['example/app'], max_usd: 5, mode: 'pr', pr_ticket: true };
+  it('an edit keeps pr_ticket on a PR mode, and a routine with none gets none', () => {
+    expect(rt.rtRoutine(rt.rtDraft(r)).pr_ticket).toBe(true);
+    expect('pr_ticket' in rt.rtRoutine(rt.rtDraft({ ...r, pr_ticket: undefined }))).toBe(false);
+  });
+  it('a mode with no PR drops it', () => {
+    expect('pr_ticket' in rt.rtRoutine(rt.rtDraft({ ...r, mode: 'report' }))).toBe(false);
+  });
+  it('a validator error goes to the field', () => {
+    expect(rt.rtErrs('pr_ticket: must be true or false').errs.pr_ticket).toBe('must be true or false');
+  });
+});
+
 describe('the draft and the routine', () => {
   const routines = [
     { ...sched, name: 'A', prompt: 'p', repos: ['example/app'], branch: 'dev', max_usd: 5, skip_no_commits: false, draft: false, env: 'dev' },

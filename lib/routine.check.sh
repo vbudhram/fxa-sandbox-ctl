@@ -108,6 +108,12 @@ check "a prompt with a lone surrogate is a field error, not a traceback" "prompt
 check "skip_no_commits that is not a bool" "skip_no_commits: must be true or false" "$(v secret priv.json '{"skip_no_commits":"yes"}')"
 check "draft that is not a bool" "draft: must be true or false" "$(v secret priv.json '{"draft":"no"}')"
 check "an env that is not live or dev" "env: must be live or dev" "$(v secret priv.json '{"env":"prod"}')"
+jq -c '.secret = true' "$tmp/priv.json" > "$tmp/sec.json"
+check "pr_ticket on a pr mode is valid, and false is valid on any mode" "ok ok ok" \
+  "$(v secret priv.json '{"mode":"pr","pr_ticket":true}') $(v secret priv.json '{"mode":"pr+notes","pr_ticket":true}') $(v secret priv.json '{"pr_ticket":false}')"
+check "pr_ticket that is not a bool" "pr_ticket: must be true or false" "$(v secret priv.json '{"mode":"pr","pr_ticket":"yes"}')"
+check "pr_ticket on a mode with no PR" "pr_ticket: Only a routine that opens a PR can file a ticket for it" "$(v secret priv.json '{"pr_ticket":true}')"
+check "pr_ticket for a secret team" "pr_ticket: This team's tickets are secret, so a routine does not file them" "$(v secret sec.json '{"mode":"pr","pr_ticket":true}')"
 check "report_as thread or message is valid" "ok ok" "$(v secret priv.json '{"report_as":"thread"}') $(v secret priv.json '{"report_as":"message"}')"
 check "report_as another value" "report_as: must be thread or message" "$(v secret priv.json '{"report_as":"post"}')"
 check "report_as message with no channel" "report_as: A report posted as a message needs a channel" "$(v secret priv.json '{"report_as":"message","channel":""}')"

@@ -18,7 +18,7 @@ export const RT_MODES: [string, string, string][] = [
   ['pr', 'Draft PR', 'Opens a draft PR with the fixes. Nothing merges by itself.'],
   ['pr+notes', 'Draft PR with notes', 'The draft PR, plus every finding it did not fix, in the PR description.'],
 ];
-export const RT_FIELDS = ['template', 'name', 'prompt', 'schedule', 'zone', 'repos', 'branch', 'watch', 'channel', 'mode', 'draft', 'max_usd', 'runtime', 'model', 'effort', 'skip_no_commits', 'pr_repo', 'pr_authors', 'pr_label', 'pr_mention', 'pr', 'jira_label', 'jira', 'on'];
+export const RT_FIELDS = ['template', 'name', 'prompt', 'schedule', 'zone', 'repos', 'branch', 'watch', 'channel', 'mode', 'draft', 'pr_ticket', 'max_usd', 'runtime', 'model', 'effort', 'skip_no_commits', 'pr_repo', 'pr_authors', 'pr_label', 'pr_mention', 'pr', 'jira_label', 'jira', 'on'];
 // As lib/routine.py MODELS and EFFORTS; '' is the host's default.
 export const RT_MODELS: [string, string][] = [['', 'Default (Opus 5.5)'], ['claude-opus-5-5', 'Opus 5.5'], ['claude-fable-5-2', 'Fable 5.2'], ['claude-sonnet-5-5', 'Sonnet 5.5'], ['claude-haiku-5-5', 'Haiku 5.5']];
 export const RT_EFFORTS: [string, string][] = [['', 'Default (Medium)'], ['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['xhigh', 'Extra high'], ['max', 'Max']];
@@ -84,6 +84,7 @@ export function rtRoutine(d: J): J {
   if (String(d.branch).trim() && d.repos.length === 1) r.branch = String(d.branch).trim();
   if (d.watch && !d.repos.includes(d.watch)) r.watch = d.watch;
   if (d.env) r.env = d.env;
+  if (d.pr_ticket && (d.mode === 'pr' || d.mode === 'pr+notes')) r.pr_ticket = true;
   // The form does not show report_as yet: an edit keeps it.
   if (d.report_as) r.report_as = d.report_as;
   return r;

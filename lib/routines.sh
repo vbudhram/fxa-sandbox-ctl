@@ -1094,7 +1094,7 @@ _prfix_end() {
 routine_reconcile() {
   local now="$1" env="$2" rows r id st sess since rec sst pr why free="" fix inv
   rows="$(db_json "SELECT r.id AS id, r.state AS state, coalesce(r.session, '') AS session, coalesce(r.started_at, 0) AS since, r.heads->'fix' AS fix,
-    r.heads->'investigate' AS inv FROM routine_runs r
+    r.heads->'investigate' AS inv, coalesce(t.team, '') AS team, coalesce(r.config, t.data, '{}') AS cfg FROM routine_runs r
     LEFT JOIN routines t ON t.id = r.routine_id WHERE r.state IN (${_ROUTINE_LIVE_STATES}) AND coalesce(json_extract(r.config, '$.env'), t.env, 'live') = $(db_q "$env");")" \
     || { echo "$_ROUTINE_STORE" >&2; return 1; }
   while IFS= read -r r; do
@@ -1141,8 +1141,10 @@ routine_reconcile() {
         fi ;;
     esac
     if [ -n "$pr" ] || [ "$st:$sst" = "started:pr_open" ]; then
-      db_exec "UPDATE routine_runs SET state = 'ok', pr_url = $( [ -n "$pr" ] && db_q "$pr" || echo NULL ), ended_at = $now WHERE id = $id AND state = 'started';" >/dev/null \
+      local ok; ok="$(db_value "UPDATE routine_runs SET state = 'ok', pr_url = $( [ -n "$pr" ] && db_q "$pr" || echo NULL ), ended_at = $now WHERE id = $id AND state = 'started'; SELECT changes();")" \
         || { echo "$_ROUTINE_STORE" >&2; return 1; }
+      # The bot missed the end, so the ticket that routine_done files comes from here.
+      [ "$ok" != 1 ] || [ -z "$pr" ] || _routine_pr_ticket "$id" "$sess" "$(jq -r .team <<< "$r")" "$(jq -r .cfg <<< "$r")" >/dev/null
     elif [ -n "$why" ]; then
       local n; n="$(db_value "UPDATE routine_runs SET state = 'failed', reason = $(db_q "$why"), ended_at = $now WHERE id = $id AND state = '$st'; SELECT changes();")" \
         || { echo "$_ROUTINE_STORE" >&2; return 1; }
@@ -1182,6 +1184,19 @@ _prfix_reconcile() {
     || { echo "$_ROUTINE_STORE" >&2; return 1; }
   [ "$n" = 1 ] && [ "$end" = failed ] && errors_record routine run_failed "$sess" "routine tick" "routine run ${id}: ${why}" ""
   return 0
+}
+
+# _routine_pr_ticket <run> <session> <team> <cfg json>   A pr_ticket routine's PR gets a Jira ticket that the PR closes,
+# to track it (session_create_jira --routine; a PR that names a ticket already files none). Prints the key. A failure
+# is an operator error and changes nothing else: the ticket is for tracking only.
+_routine_pr_ticket() {
+  jq -e '.pr_ticket == true and (.mode == "pr" or .mode == "pr+notes")' <<< "$4" >/dev/null 2>&1 || return 0
+  local k="" err; err="$(mktemp "${TMPDIR:-/tmp}/fxa-routine.XXXXXX")" || return 0
+  k="$( ( [ "$3" = "${PIPE_PROFILE:-}" ] || pipeline_load "$3" >/dev/null 2>&1 || { echo "team ${3:-?} does not load" >&2; exit 1; }
+          session_create_jira "$2" --routine "$(jq -r '.name // ""' <<< "$4")" ) </dev/null 2> "$err" | tail -1)" || k=""
+  [[ "$k" =~ ^[A-Z][A-Z0-9]*-[0-9]+$ ]] || { k=""; errors_record routine jira_create_failed "$2" "routine ${1} PR ticket" \
+    "no ticket for the PR: $(grep . "$err" | tail -1 | cut -c1-200)" "" 2>/dev/null || true; }
+  rm -f "$err"; printf '%s' "$k"
 }
 
 # _routine_session_cost <key>   What the session's run token spent (the LLM proxy's count), or nothing.
@@ -1277,6 +1292,7 @@ routine_done() {
       heads = $( [ -n "$ires" ] && echo "json_set(heads, '$.investigate.result', json($(db_q "$(jq -c .result <<< "$ires")")))" || echo heads )
       WHERE id = ${run} AND ${guard}; SELECT changes();")" || n=""
   [ "$n" != 1 ] || [ -n "$sess" ] || _inv_no_start "$run"
+  [ "$n:$state" != 1:ok ] || [ -z "$pr" ] || _routine_pr_ticket "$run" "$sess" "$(jq -r '.team // ""' <<< "$r")" "$(jq -r '.cfg // "{}"' <<< "$r")" >/dev/null
   # The PR comment follows the end at once; a failure is repaired by the next tick.
   [ -z "$fix" ] || prfix_report "$run" >/dev/null 2>&1 || true
   local add='{}'

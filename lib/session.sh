@@ -1649,12 +1649,15 @@ session_pr_ready() {
   _session_history_add "$1" action "Marked ${url} ready for review"
 }
 
-# session_create_jira <key>   A Jira ticket for a session PR that has none: an FXA task
+# session_create_jira <key> [--routine <name>]   A Jira ticket for a session PR that has none: an FXA task
 # with the PR's title and first paragraph, the PR and Slack thread links, and the
 # agent-session label. The PR body then names it, so the PR status finds it. Prints the
 # key; a PR that names a ticket already prints that one and creates nothing.
+# --routine: a routine run's PR, for tracking: the agent-routine label, and a Closes line, so the merge closes it.
 session_create_jira() {
   local url pr title body key desc site="${FXA_JIRA_SITE_URL:-https://mozilla-hub.atlassian.net}" project
+  local rname="" label=agent-session from="an agent session" link
+  [ "${2:-}" != --routine ] || { rname="${3:-}"; label=agent-routine from="the routine \"${3:-}\""; }
   project="$(_session_jira_project)" || return 1
   key="$(session_get "$1" jira)"; [ -z "$key" ] || { printf '%s\n' "$key"; return 0; }
   url="$(session_get "$1" pr_url)"; [ -n "$url" ] || { echo "no PR for $1" >&2; return 1; }
@@ -1667,12 +1670,13 @@ session_create_jira() {
     { printf '%s\n' "$body" | awk 'NF { p = 1 } p && !NF { exit } p' | cut -c1-1500
       printf '\nPull request: %s\n' "$url"
       [ -n "$(session_get "$1" slack_url)" ] && printf 'Slack thread: %s\n' "$(session_get "$1" slack_url)"
-      printf '\nCreated by fxa-agent from an agent session.\n'; } > "$desc"
+      printf '\nCreated by fxa-agent from %s.\n' "$from"; } > "$desc"
     key="$(_acli_once jira workitem create --project "$project" --type Task --summary "$title" \
-             --description-file "$desc" --label agent-session --json 2>/dev/null | jq -r '.key // empty' 2>/dev/null)" || key=""
+             --description-file "$desc" --label "$label" --json 2>/dev/null | jq -r '.key // empty' 2>/dev/null)" || key=""
     rm -f "$desc"
     [[ "$key" =~ ^[A-Z][A-Z0-9]*-[0-9]+$ ]] || { echo "could not create a Jira ticket for $url" >&2; return 1; }
-    { printf '%s' "$pr" | jq -r '.body // ""'; printf '\n\nJira: %s/browse/%s\n' "$site" "$key"; } \
+    if [ -n "$rname" ]; then link="Closes ${key}"; else link="Jira: ${site}/browse/${key}"; fi
+    { printf '%s' "$pr" | jq -r '.body // ""'; printf '\n\n%s\n' "$link"; } \
       | gh api -X PATCH "repos/$(_session_pr_parts "$1" | cut -f1)/pulls/$(_session_pr_parts "$1" | cut -f2)" -F body=@- >/dev/null 2>&1 \
       || echo "NOTE: created $key, but could not add it to the PR body" >&2
     _session_history_add "$1" action "Created ${key} for ${url}"

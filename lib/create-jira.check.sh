@@ -28,6 +28,9 @@ check "the task: FXA, Task, label, title without the type prefix" "yes" \
 check "the description: the first paragraph and both links" "Short summary of the change.|More of the first paragraph.|Pull request: https://github.com/mozilla/fxa/pull/9|Slack thread: https://example.slack.com/archives/C1/p1|Created by fxa-agent from an agent session." \
   "$(grep -v '^$' "$tmp/desc" | paste -sd'|' -)"
 check "the PR body names the ticket" "yes" "$(tail -1 "$tmp/patched" | grep -q '^Jira: https://mozilla-hub.atlassian.net/browse/FXA-777$' && grep -q '## Testing' "$tmp/patched" && echo yes)"
+rm -f "$tmp/acli" "$tmp/patched"
+check "a routine's ticket: the agent-routine label, its name, and a Closes line in the PR body" "yes|yes|Closes FXA-777" \
+  "$(session_create_jira agent-x1 --routine "Nightly review" >/dev/null; grep -q -- '--label agent-routine' "$tmp/acli" && echo yes)|$(grep -qx 'Created by fxa-agent from the routine "Nightly review".' "$tmp/desc" && echo yes)|$(tail -1 "$tmp/patched")"
 rm -f "$tmp/acli"; TITLE='fix(settings): FXA-12 keep the email'
 check "a PR that names a ticket creates nothing" "FXA-12|no" "$(session_create_jira agent-x1)|$([ -e "$tmp/acli" ] && echo yes || echo no)"
 check "a secret team files nothing, and says why" "1|no|yes" \
