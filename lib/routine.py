@@ -106,7 +106,7 @@ def channels(team, index, env):
 
 def channel_why(ch, team, tpl, profile, index, env):
     """Why this team's routine of template tpl may not post in channel ch, or None. A security review posts to any
-    channel: its findings go to Jira, and the bot still refuses a public or shared channel when the run starts."""
+    channel the bot is in, public too: its findings go to Jira."""
     if tpl == "security-review":
         return None
     own, other = channels(team, index, env)
