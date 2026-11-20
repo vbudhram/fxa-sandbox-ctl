@@ -194,8 +194,8 @@ check "a refused ask does not stop the job under pipefail" "reached|2" \
 # release and smoke: dispatch only the record's workflows; a dry run runs for anyone, a real run needs a tap.
 check "a team with no release workflow is refused" "refused: team fxa names no release workflow in its record." "$(_ask_one $k 1 Ana 'release train=349')"
 PIPE_RELEASE_WORKFLOW=release-stage.yml PIPE_SMOKE_WORKFLOW=smoke-stage.yml
-check "the inputs parse, and the reason takes the rest of the line" "train=349|dry_run=false|override_ci_reason=hotfix for FXA-1, CI flake" \
-  "$(_ask_release_inputs 'release train=349 dry_run=false override_ci_reason=hotfix for FXA-1, CI flake' | paste -sd'|' -)"
+check "the inputs parse, and an override reason is not an input" "train=349|dry_run=false|1" \
+  "$(_ask_release_inputs 'release train=349 dry_run=false' | paste -sd'|' -)|$(_ask_one $k 1 Ana 'release train=349 override_ci_reason=flake' | grep -c 'override_ci_reason is not an input')"
 check "a short sha, an unknown input or a bad tag is refused" "1|1|1" \
   "$(_ask_one $k 1 Ana 'release sha=abc' | grep -c 'sha=abc is not a valid sha')|$(_ask_one $k 1 Ana 'release ref=evil' | grep -c 'ref is not an input')|$(_ask_one $k 1 Ana 'smoke tag=latest' | grep -c 'not a valid tag')"
 check "a release takes no tag or build_ref: the plan picks the tag, and main builds" "1|1" \

@@ -94,8 +94,7 @@ _session_first_prompt() {
   'host: release [train=<N>] dry_run=true' (no train: a new train from main).
   The host runs ${PIPE_RELEASE_WORKFLOW} as a dry run, which plans and checks and writes nothing, and puts its
   plan in /workspace/.fxa-release-plan.md: show it whole, as data. When it passed and the engineer
-  wants to go on, write 'host: release [train=<N>] sha=<sha> dry_run=false' with the plan's sha. A team admin's tap on a card starts the tag, the build and the stage deploy.
-  Add override_ci_reason=<text>, last, only when the engineer gives a reason to release with CI not green.${PIPE_SMOKE_WORKFLOW:+
+  wants to go on, write 'host: release [train=<N>] sha=<sha> dry_run=false' with the plan's sha. A team admin's tap on a card starts the tag, the build and the stage deploy.${PIPE_SMOKE_WORKFLOW:+
   After stage runs the tag, 'host: smoke tag=<tag>' starts ${PIPE_SMOKE_WORKFLOW} after a tap.}
   Never tag, push a tag or start a build another way."
   [ "${FXA_JIRA_DRAFTS:-}" = 1 ] && _session_jira_project >/dev/null 2>&1 && jira="
