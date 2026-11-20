@@ -62,7 +62,9 @@ if [ -f .fxa-test-plan.json ]; then
   else
     grep -E '\b(FAIL|NONE|TODO)\b' .fxa-verify-verdict.txt | head -10 | while IFS= read -r l; do echo "! verdict: ${l:0:160}"; done
     n=$((n + $(grep -cE '\b(FAIL|NONE|TODO)\b' .fxa-verify-verdict.txt)))
-    newer="$(find . \( -path ./node_modules -o -path ./.git -o -name node_modules \) -prune -o -newer .fxa-verify-verdict.txt -type f \( -name '*.ts' -o -name '*.tsx' -o -name '*.js' \) -print 2>/dev/null | head -5)"
+    # The files verify.sh --stale reads, against the start of its last run.
+    ref=.fxa-verify-start; [ -f "$ref" ] || ref=.fxa-verify-verdict.txt
+    newer="$(grep -E '\.(ts|tsx|js)$' <<< "$changed" | grep -vE '^(ai|artifacts)/' | while IFS= read -r f; do [ "$f" -nt "$ref" ] && echo "$f"; done | head -5)"
     [ -n "$newer" ] && flag "code changed after the verdict; rerun only its rows with verify.sh --stale: $(tr '\n' ' ' <<< "$newer")"
   fi
 else echo "No test plan."; fi

@@ -181,8 +181,8 @@ Every turn, including later ones:
 - Verify with ${verify} --run --plan /workspace/.fxa-test-plan.json: it runs your
   planned tests, then the related specs of what you changed, and lint. Never run
   a whole package suite. After a fix, and before you end the turn, rerun with
-  ${verify} --stale: it reruns only the failed rows and the rows of the files that
-  changed after the last verdict. Do not repeat the full --run. Update
+  ${verify} --stale: it reruns the failed rows and the rows of the packages and
+  flows that a changed file touches. Do not repeat the full --run. Update
   the plan when the work changes. For the local stack, ${stack}; wait for a
   service with its 'wait' command, not a sleep loop.
 - To show the engineer a screenshot, a video, a patch, or a .log, .txt, .csv or .json file (UTF-8, up to

@@ -186,12 +186,13 @@ must cover it and must be newer than your last code change:
 ```bash
 cd /workspace
 cat .fxa-verify-verdict.txt
-find . -path ./node_modules -prune -o -newer .fxa-verify-verdict.txt -type f \
-  \( -name '*.ts' -o -name '*.tsx' -o -name '*.js' \) -print | grep -v node_modules | head
+ref=.fxa-verify-start; [ -f "$ref" ] || ref=.fxa-verify-verdict.txt
+{ git diff --name-only "$(git merge-base HEAD origin/main)"; git ls-files -o --exclude-standard; } | sort -u \
+  | grep -E '\.(ts|tsx|js)$' | while read -r f; do [ "$f" -nt "$ref" ] && echo "$f"; done | head
 ```
 
-- A file listed by `find` changed after the verdict: run `/fxa-verify --stale`.
-  It reruns only the rows of the changed files, not the full plan.
+- A file in the list changed after the last run started: run `/fxa-verify --stale`.
+  It reruns the rows of the changed files' packages, not the full plan.
 - The verdict has a `FAIL` or a `NONE` line: fix it, or say in the PR body why
   it is outside the change.
 - A `TODO` line (Storybook): run `/fxa-storybook-capture` and list the files in

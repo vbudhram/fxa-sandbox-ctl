@@ -24,7 +24,7 @@ const frozen: Array<{
   },
 ];
 TS
-echo old > lib/senders/emails/mail.ts; echo old > lib/senders/emails/storybook-email.ts; echo old > apps/x.ts
+echo old > lib/senders/emails/mail.ts; echo old > lib/senders/emails/storybook-email.ts; echo old > apps/x.ts; echo dist/ > .gitignore
 printf "test.describe('severity-1 sign in', () => {});\n" > packages/functional-tests/tests/signin/old.spec.ts
 g add -A; g commit -qm base; git update-ref refs/remotes/origin/main HEAD
 # The change.
@@ -34,7 +34,8 @@ printf "fireEvent.click(screen.getByTestId('x'));\n" > packages/app/src/a.test.t
 printf "test.describe('new flow', () => {});\n" > packages/functional-tests/tests/signin/new.spec.ts
 g add packages/app/src/a.ts lib/senders apps; g commit -qm change
 echo '{}' > .fxa-test-plan.json; printf 'plan  unit a.test  PASS\nplan  flow new  FAIL\n' > .fxa-verify-verdict.txt
-sleep 1; touch packages/app/src/a.ts
+# Build output and a touched file outside the diff do not count: verify.sh --stale does not see them.
+sleep 1; touch packages/app/src/a.ts _scripts/check-frozen.ts; mkdir -p dist; touch dist/x.js
 out="$(bash "$C" "$r")"
 has() { grep -c -- "$1" <<< "$out" | tr -d ' '; }
 check "the diff lists files with line counts, no stat bars" "1|0" "$(grep -cx $'1\t1\tapps/x.ts' <<< "$out")|$(grep -cE '\| +[0-9]+ [-+]' <<< "$out")"
@@ -43,7 +44,7 @@ check "check 1: fireEvent/ByTestId in a new react test" "1" "$(has '! react test
 check "check 3: a removed export asks for tsc on its package" "1" "$(has '! a removed export or changed signature in packages/app: run npx tsc --noEmit -p packages/app/tsconfig.json')"
 check "check 4: a path the regex pattern matches is frozen; the excluded one and an apps/ path are not" "1|0|0|1" \
   "$(has '! frozen path (yarn check:frozen refuses the commit): lib/senders/emails/mail.ts')|$(has 'frozen path.*storybook-email')|$(has 'frozen path.*apps/x.ts')|$(has '! frozen path')"
-check "check 6: a FAIL in the verdict, and code newer than it" "1|1" "$(has '! verdict: plan  flow new  FAIL')|$(has '! code changed after the verdict')"
+check "check 6: a FAIL in the verdict, and code in the diff newer than it" "1|1" "$(has '! verdict: plan  flow new  FAIL')|$(has '! code changed after the verdict; rerun only its rows with verify.sh --stale: packages/app/src/a.ts $')"
 check "check 7: a new spec without the tag its neighbour has" "1" "$(has '! packages/functional-tests/tests/signin/new.spec.ts has no severity-N or #smoke tag')"
 check "the count" "1" "$(has '== 6 item(s) need attention')"
 # A clean change: nothing flagged.

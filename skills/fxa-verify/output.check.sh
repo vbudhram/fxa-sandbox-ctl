@@ -19,11 +19,14 @@ mkdir -p bin src; touch src/a.test.ts
 printf '%s\n' '#!/bin/bash' 'case " $* " in *" --listTests "*) for i in $(seq 20); do echo "x$i.spec.ts"; done ;; *) echo "Tests: 1 passed" ;; esac' > bin/fakejest; chmod +x bin/fakejest
 printf '%s\t%s\t%s\n' \
   "FAIL" "pkg-a tests|.|fakejest --findRelatedTests src/a.ts" "FAIL pkg-a tests  1s  log" \
-  "FAIL" "pkg-b unit|.|for i in \$(seq 30); do echo line\$i; done; exit 1" "FAIL pkg-b unit  1s  log" > "$tmp/.fxa-verify-rows.tsv"
+  "FAIL" "pkg-b unit|.|for i in \$(seq 30); do echo line\$i; done; exit 1" "FAIL pkg-b unit  1s  log" \
+  "FAIL" "pkg-d tests|.|fakejest --findRelatedTests src/d.ts" "FAIL pkg-d tests  1s  log" > "$tmp/.fxa-verify-rows.tsv"
 out="$(PATH="$tmp/bin:$PATH" bash "$tmp/verify.sh" --failed 2>&1)"; rc=$?
 after="$(sed -n '/^Verdict:/,$p' <<<"$out")"
 check "a failed row: exit 1" 1 "$rc"
 check "the sibling-only row names the count" 1 "$(grep -c 'PASS pkg-a tests (sibling only; 20 related not run)' <<<"$after")"
+check "20 related specs and no sibling: the row is left to CI and does not run" "1|0" \
+  "$(grep -c '^ *CI   pkg-d tests (20 related specs, no sibling) *left to CI$' <<<"$after")|$(ls "$tmp/fxa-verify-$(id -u)/2.log" 2>/dev/null | wc -l | tr -d ' ')"
 check "the failure tail comes after the table, last 15 lines" "1|1|0" "$(grep -c 'pkg-b unit failed; last lines' <<<"$after")|$(grep -cx line30 <<<"$after")|$(grep -cx line15 <<<"$after")"
 check "the next step is --stale" 1 "$(tail -1 <<<"$out" | grep -c 'verify.sh --stale$')"
 check "a run's plan names the rows, not their commands" "2|0" "$(sed -n '/^Plan/,/^Verdict:/p' <<<"$out" | grep -cE '^  pkg-(a tests|b unit) *$')|$(sed -n '/^Plan/,/^Verdict:/p' <<<"$out" | grep -c 'seq 30')"

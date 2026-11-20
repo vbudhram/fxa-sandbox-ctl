@@ -52,6 +52,10 @@ if [ "$RUN$REVERT$FAILED$STALE" != 0000 ] && command -v flock >/dev/null; then
   lockf="${TMPDIR:-/tmp}/fxa-verify-$(id -u).lock"; exec 9>"$lockf"
   flock -n 9 || { echo "ERROR: another fxa-verify run holds $lockf. Wait for it to end, then run again."; exit 75; }
 fi
+# The run's start time, moved to START with the verdict: a file edited during the run counts as changed after it.
+START=/workspace/.fxa-verify-start
+[ "$RUN$FAILED$STALE" != 000 ] && touch "$START.tmp"
+is_test() { case "$1" in *.spec.*|*.test.*|*/test/*|*/tests/*|*/__tests__/*|*/__mocks__/*|*/__snapshots__/*|packages/functional-tests/*) return 0 ;; esac; return 1; }
 
 # The project that owns a file: the nearest dir up with project.json or package.json.
 owner() {
@@ -245,8 +249,9 @@ cap_related() {
   [ "${n:-0}" -gt "$MAX_RELATED" ] || return 0
   local sib; sib="$(sed 's/.*--findRelatedTests //' <<<"$cmd" | tr ' ' '\n' | sed -E 's/\.(tsx?|jsx?)$//' | while read -r b; do
     for e in .test.tsx .test.ts .spec.ts .spec.tsx; do [ -f "$dir/$b$e" ] && echo "$b$e"; done; done | tr '\n' ' ')"
-  echo "# ${n} related specs; running the sibling specs only" >&2
-  [ -n "$sib" ] && capped="${cmd%%--findRelatedTests*}$sib" capnote=" (sibling only; $n related not run)"
+  # No sibling: leave the row to CI, since all n related specs come near the whole suite.
+  if [ -n "$sib" ]; then capped="${cmd%%--findRelatedTests*}$sib" capnote=" (sibling only; $n related not run)"
+  else capped="" capnote=" ($n related specs, no sibling)"; fi
   return 0
 }
 
@@ -255,7 +260,6 @@ cap_related() {
 # it fails on a staged file. git show writes the base version and leaves the index alone.
 if [ "$REVERT" = 1 ]; then
   base="$(git merge-base HEAD origin/main 2>/dev/null || echo HEAD)"
-  is_test() { case "$1" in *.spec.*|*.test.*|*/test/*|*/tests/*|*/__tests__/*|*/__mocks__/*|*/__snapshots__/*|packages/functional-tests/*) return 0 ;; esac; return 1; }
   tests=() fix=()
   [ "$given" -gt 0 ] && tests=("${files[@]}")
   while IFS= read -r f; do
@@ -269,7 +273,7 @@ if [ "$REVERT" = 1 ]; then
   LINT=0 TYPES=0 rows=() setup=""
   add_rows() { local p label dir cmd; for p in "${plan[@]}"; do IFS='|' read -r label dir cmd <<<"$p"
     case "$label" in *"db patches") setup="$cmd"; continue ;; esac
-    cap_related "$dir" "$cmd"; cmd="$capped"; case "$cmd" in *--findRelatedTests*) cmd="$cmd --passWithNoTests" ;; esac
+    cap_related "$dir" "$cmd"; cmd="$capped"; [ -n "$cmd" ] || continue; case "$cmd" in *--findRelatedTests*) cmd="$cmd --passWithNoTests" ;; esac
     rows+=("${1:-$label}$capnote|$dir|$cmd"); done; }
   if [ "${#tests[@]}" -gt 0 ]; then for t in "${tests[@]}"; do plan=(); plan_files "" "$t"; add_rows "$t"; done
   else plan=(); plan_files "" "${fix[@]}"; add_rows; fi
@@ -330,35 +334,42 @@ if [ "$REVERT" = 1 ]; then
   exit "$proof"
 fi
 
-# The same command twice (a type-check the plan and the net both ask for) runs once.
-declare -A seen_cmd=(); kept=()
-for i in "${!plan[@]}"; do IFS='|' read -r label dir cmd <<<"${plan[$i]}"
-  case "$label" in "plan CI: "*|"plan storybook: "*|"plan missing: "*) kept+=("${plan[$i]}"); continue ;; esac
-  [ -n "${seen_cmd["$dir|$cmd"]:-}" ] && continue; seen_cmd["$dir|$cmd"]=1; kept+=("${plan[$i]}"); done
-plan=("${kept[@]}")
-
 # --failed: rerun only last time's FAIL and NONE rows; the other rows keep last
 # time's verdict. A row file beside the verdict holds each row's command.
-# --stale also reruns each row whose command names a file changed after the verdict,
-# and plans the related specs of a changed file that no row names.
+# --stale also reruns every row of the package of a file changed after the last run started,
+# a functional or check row when a source file changed, and plans net rows for a package with no row.
 ROWS=/workspace/.fxa-verify-rows.tsv kept_rows=()
 if [ "$FAILED$STALE" != 00 ]; then
   [ -s "$ROWS" ] || { echo "No earlier run to rerun. Run: bash $0 --run"; exit 2; }
-  stale=() named=()
-  if [ "$STALE" = 1 ]; then for f in "${files[@]}"; do [ "$f" -nt /workspace/.fxa-verify-verdict.txt ] && stale+=("$f"); done; fi
+  stale=() own=() named=() src=0 ref="$START"; [ -f "$ref" ] || ref=/workspace/.fxa-verify-verdict.txt
+  if [ "$STALE" = 1 ]; then for f in "${files[@]}"; do [ "$f" -nt "$ref" ] || continue
+    stale+=("$f"); own+=("$(owner "$f")"); is_test "$f" || src=1; done; fi
   plan=()
   while IFS=$'\t' read -r v entry line; do
     re=0; case "$v" in FAIL|NONE) re=1 ;; esac
-    IFS='|' read -r _ d c <<<"$entry"
-    for f in ${stale[@]+"${stale[@]}"}; do
-      case " $c " in *" ${f#"$d"/} "*|*" ${f#packages/functional-tests/} "*) re=1; named+=("$f") ;; esac; done
-    if [ "$re" = 1 ]; then plan+=("$entry"); else kept_rows+=("$v"$'\t'"$entry"$'\t'"$line"); fi
+    IFS='|' read -r l d c <<<"$entry"
+    [ "$src" = 1 ] && case "$l|$c" in "plan check: "*|*fxa-functional-local*) re=1 ;; esac
+    for i in ${stale[@]+"${!stale[@]}"}; do f="${stale[$i]}"
+      # A functional row reruns only for its own spec; any other row for any file of its package.
+      case "$c" in *fxa-functional-local*) ;; *) case " $l " in *" ${own[$i]} "*) re=1; named+=("$f"); continue ;; esac ;; esac
+      q="$(printf %q "${f#"$d"/}")" fq="$(printf %q "${f#packages/functional-tests/}")"
+      case " $c " in *" $q "*|*" $fq "*) re=1; named+=("$f") ;; esac; done
+    if [ "$re" = 1 ]; then plan+=("$entry")
+    else case "$line" in *.log) line="${line% *} (kept; its log is gone)" ;; esac; kept_rows+=("$v"$'\t'"$entry"$'\t'"$line"); fi
   done < "$ROWS"
   new=(); for f in ${stale[@]+"${stale[@]}"}; do printf '%s\n' ${named[@]+"${named[@]}"} | grep -qxF -- "$f" || new+=("$f"); done
   [ "${#new[@]}" -gt 0 ] && plan_files "net " "${new[@]}"
   [ "${#plan[@]}" -gt 0 ] || { echo "Nothing failed in the last run$([ "$STALE" = 1 ] && echo ', and no file changed after it')."; exit 0; }
   RUN=1
 fi
+
+# The same command twice (a type-check the plan and the net both ask for, or a kept row) runs once.
+declare -A seen_cmd=(); kept=()
+for r in ${kept_rows[@]+"${kept_rows[@]}"}; do IFS=$'\t' read -r _ e _ <<<"$r"; IFS='|' read -r _ dir cmd <<<"$e"; seen_cmd["$dir|$cmd"]=1; done
+for i in "${!plan[@]}"; do IFS='|' read -r label dir cmd <<<"${plan[$i]}"
+  case "$label" in "plan CI: "*|"plan storybook: "*|"plan missing: "*) kept+=("${plan[$i]}"); continue ;; esac
+  [ -n "${seen_cmd["$dir|$cmd"]:-}" ] && continue; seen_cmd["$dir|$cmd"]=1; kept+=("${plan[$i]}"); done
+plan=("${kept[@]}")
 
 echo "Plan (${#files[@]} changed file(s)):"
 # A run names the rows only; each row's log starts with the command it ran.
@@ -375,6 +386,7 @@ for i in "${!plan[@]}"; do
     "plan storybook: "*) results+=("$(printf '%-4s %-40s' TODO "$label")  run /fxa-storybook-capture"); continue ;;
   esac
   cap_related "$dir" "$cmd"; cmd="$capped"
+  [ -n "$cmd" ] || { results+=("$(printf '%-4s %-40s' CI "$label$capnote")  left to CI"); continue; }
   # No spec imports the file (a route that only integration specs cover): Jest
   # would exit 1 on "No tests found". Say so as NOREL, not as a failure.
   case "$cmd" in *--findRelatedTests*) cmd="$cmd --passWithNoTests" ;; esac
@@ -397,6 +409,8 @@ for fl in ${failed_logs[@]+"${failed_logs[@]}"}; do echo; echo "---- ${fl%%|*} f
 note=""; [ "$FAILED" = 1 ] && note=" (reran ${#plan[@]} failed row(s); ${#kept_rows[@]} kept from the last run)"
 [ "$STALE" = 1 ] && note=" (reran ${#plan[@]} failed or changed row(s); ${#kept_rows[@]} kept from the last run)"
 { echo "fxa-verify $(date -u +%FT%TZ)${PLAN:+ plan=$PLAN}${note}"; printf '%s\n' "${results[@]}"; } > /workspace/.fxa-verify-verdict.txt
+# --failed skips the changed files, so it keeps the old start time for the next --stale.
+[ "$FAILED$STALE" = 10 ] || mv -f "$START.tmp" "$START" 2>/dev/null || true
 { for i in "${!plan[@]}"; do printf '%s\t%s\t%s\n' "${results[$i]%% *}" "${plan[$i]}" "${results[$i]}"; done
   for r in ${kept_rows[@]+"${kept_rows[@]}"}; do printf '%s\n' "$r"; done; } > "$ROWS"
 # One line per run, for the host's metrics: what ran, what failed, how long.

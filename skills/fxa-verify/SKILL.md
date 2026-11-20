@@ -27,14 +27,13 @@ the foreground. Only one run can write logs at a time: a second run exits 75 and
 says so.
 
 After you fix a failure, use `--stale`. It reruns the rows that failed or ran no
-tests last time, and each row whose command names a file that changed after the
-last verdict. A changed file that no row names gets its related specs (`net`
-lines). The other rows keep their verdicts. `--failed` reruns only the failed
-rows and does not look at changed files. Before the handoff, run `--stale` again
-if a file changed after the last verdict. Do not run the full `--run` again: it
-repeats every planned spec, the functional ones too. A plan `check` line names
-no file, so `--stale` keeps its verdict: rerun it by hand if your fix changed
-what it checks.
+tests last time, and every row (tests, lint, format, types) of the package of
+each file that changed after the last run started. When a file that is not a
+test changed, it also reruns each plan `check` line and each functional spec. A
+changed file in a package with no row gets its related specs (`net` lines). The
+other rows keep their verdicts. `--failed` reruns only the failed rows and does
+not look at changed files. Before the handoff, run `--stale` again if a file
+changed after the last run started. Do not run the full `--run` again.
 
 With `--plan` it first runs the specs your test plan names (`plan` lines; see
 `/fxa-test-plan`), then the related specs of the changed files (`net` lines),
@@ -98,7 +97,8 @@ bundle.
 For Jest projects it uses Jest's own `--findRelatedTests`, so a source change
 runs every spec that imports it. When more than 15 specs relate (a widely used
 file), it runs the sibling spec only, and the row label gives the count, for
-example `tests (sibling only; 153 related not run)`. Full logs are in
+example `tests (sibling only; 153 related not run)`. With no sibling spec, the
+row is `CI`: all the related specs come near the whole suite. Full logs are in
 `/tmp/fxa-verify-<uid>/` (`--revert`: `/tmp/fxa-verify-revert-<uid>/`).
 
 ## Traps it avoids (do not work around them by hand)
