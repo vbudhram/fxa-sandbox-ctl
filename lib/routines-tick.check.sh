@@ -95,6 +95,14 @@ check "no new commits: post true on day 1, false on day 2, false on day 3 (day 1
   "no new commits since the last run|true|false|false" \
   "${s1%|*}|$(jq -r --argjson r "$r6" '.skips[] | select(.routine == $r) | .post' <<< "$d2")|$(jq -r --argjson r "$r6" '.skips[] | select(.routine == $r) | .post' <<< "$d3")"
 
+# skip_no_commits false: the routine runs with no new commits.
+r6b="$(mk fxa "daily 10:00" '{"skip_no_commits": false}')"
+db_exec "INSERT INTO routine_runs (routine_id, period, state, heads, started_at) VALUES ($r6b, '2026-10-20', 'ok', json('{\"mozilla/fxa\": {\"start\": null, \"head\": \"$H1\"}}'), $((T + 86400)));"
+tick $((T + 2 * 86400 + 3600 + 120)) >/dev/null
+check "skip_no_commits false runs with no new commits" "claimed" \
+  "$(db_value "SELECT state FROM routine_runs WHERE routine_id = $r6b AND period = '2026-10-21';")"
+db_exec "UPDATE routine_runs SET state = 'ok' WHERE routine_id = $r6b;"
+
 # A routine an admin paused: skipped, and not posted.
 r7="$(mk fxa "daily 11:00")"; db_exec "UPDATE routines SET paused = 1 WHERE id = $r7;"
 check "a paused routine is skipped with post false" "the routine is paused|false" \

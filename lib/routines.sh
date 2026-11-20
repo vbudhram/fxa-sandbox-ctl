@@ -1038,7 +1038,7 @@ routine_tick() {
       local hrc=0; heads="$(_routine_heads "$cfg" "$id" "$team" 2>/dev/null)" || hrc=$?
       case $hrc in 0) ;; 3) why="cannot read the branch head" ;; *) rm -f "$f"; echo "$_ROUTINE_STORE" >&2; return 1 ;; esac
     fi
-    if [ -z "$why" ] && [ "$(jq -r '.skip_no_commits // true' <<< "$cfg")" = true ] \
+    if [ -z "$why" ] && [ "$(jq -r '.skip_no_commits != false' <<< "$cfg")" = true ] \
         && [ "$(jq -r --argjson c "$cfg" 'if $c.watch then [.[$c.watch]] else [.[]] end | map(.start == .head) | all' <<< "$heads")" = true ]; then why="no new commits since the last run"; fi
     if [ -z "$why" ] && [ "$free" -lt 2 ]; then
       # Waiting for a slot stays unclaimed; 30 min after the time it fails (D16).
