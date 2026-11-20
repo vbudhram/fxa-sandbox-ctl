@@ -45,6 +45,7 @@ hw() {
   [ -n "${KEEP:-}" ] || rm -rf "$tmp"/agent-abcd.words-used "$tmp"/agent-abcd.hw-*
   local out rc=0
   if [ "$3" = --confirmed ]; then out="$(printf '%s' "$1" | session_host_write agent-abcd "$2" "" 1 2>"$tmp/err")" || rc=$?
+  elif [ "$3" = --check ]; then out="$(printf '%s' "$1" | session_host_write agent-abcd "$2" "" check 2>"$tmp/err")" || rc=$?
   else out="$(printf '%s' "$1" | session_host_write agent-abcd "$2" "$3" 0 2>"$tmp/err")" || rc=$?; fi
   echo "${rc}|${out}|$(cat "$tmp/err")|$(paste -sd, "$tmp/calls")"
 }
@@ -84,6 +85,12 @@ check "another person's PR is refused for a mapped admin" "1|" "$(AUTHOR=dana hw
 check "the mapped admin's own PR gets the new body" "0|patch" "$(AUTHOR=Bo-GH hw "$(w pr-body $PR 'Mine.')" UADMINX2 "update the description of PR 5" | cut -d'|' -f1,4)"
 check "a body with personal data is refused before any write" "1|" \
   "$(hw "$(w pr-body $PR 'Ping jane.doe@gmail.com')" UADMINX1 "update the description of PR 5" | cut -d'|' -f1,4)"
+
+# A check runs every refusal before the card, writes nothing, and does not need an admin.
+check "a check of a person's PR body is refused before a card" "1||refused: $PR is by dana; the host changes the description only of its own PRs and yours.|" \
+  "$(AUTHOR=dana hw "$(w pr-body $PR 'New.')" UPLAIN01 --check)"
+check "a check of a good PR comment passes for a non-admin and writes nothing" '0|{"ok":true,"check":true,"op":"pr-comment"}||' \
+  "$(hw "$(w pr-comment $PR)" UPLAIN01 --check)"
 
 # One message allows one write, and one tap runs once; a failed write gives the tap back.
 check "the same words a second time get needs-confirm" "0|3" \

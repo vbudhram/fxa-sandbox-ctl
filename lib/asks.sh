@@ -496,7 +496,7 @@ session_host_write() {
   # 4x the longest body: JSON escapes and multibyte text make the bytes larger than the characters.
   w="$(head -c 262144)"; e="$(mktemp)"
   out="$(printf '%s' "$w" | _hw_run "$@" 2>"$e")" || rc=$?
-  jq -nc --arg k "$key" --arg by "$2" --argjson c "$([ "$4" = 1 ] && echo true || echo false)" \
+  [ "$4" = check ] || jq -nc --arg k "$key" --arg by "$2" --argjson c "$([ "$4" = 1 ] && echo true || echo false)" \
     --arg r "$(if [ "$rc" = 0 ]; then printf 'ok %s' "$(jq -r .url <<< "$out")"; else head -1 "$e"; fi)" \
     --argjson t "$(jq -c '{op: (.op // "" | tostring | .[0:40]), target: (.key // .url // "" | tostring | .[0:300])}' <<< "$w" 2>/dev/null || echo '{}')" \
     '{at: now, key: $k, by: $by} + $t + {confirmed: $c, result: $r}' >> "${SESSION_DIR}/${key}.host-actions.jsonl" 2>/dev/null || true
@@ -512,7 +512,8 @@ _hw_run() {
     || { echo "refused: that is not a host write." >&2; return 1; }
   op="$(jq -r .op <<< "$w")"; body="$(jq -r .body <<< "$w")"
   if [ "$op" = jira-comment ]; then tgt="$(jq -r '.key // ""' <<< "$w")"; else tgt="$(jq -r '.url // ""' <<< "$w")"; fi
-  [ "$(_hw_person "$by" admin)" = true ] || { echo "refused: only a team admin of ${PIPE_PROFILE:-this team} can ask for this." >&2; return 1; }
+  # A check asks whether an admin's tap could run it, so it does not need an admin.
+  [ "$conf" = check ] || [ "$(_hw_person "$by" admin)" = true ] || { echo "refused: only a team admin of ${PIPE_PROFILE:-this team} can ask for this." >&2; return 1; }
   # Not ${body//[[:space:]]/}: bash 3.2 takes minutes on a 60000-character body.
   [[ "$body" == *[![:space:]]* ]] || { echo "refused: the text is empty." >&2; return 1; }
   [ "${#body}" -le "$([ "$op" = pr-body ] && echo 60000 || echo 8000)" ] || { echo "refused: the text is too long." >&2; return 1; }
@@ -545,6 +546,7 @@ _hw_run() {
     fi
     r="$(_ask_pii "$body")" || { echo "$r" >&2; return 1; }
   fi
+  [ "$conf" != check ] || { jq -nc --arg op "$op" '{ok: true, check: true, op: $op}'; return 0; }
   if [ "$conf" != 1 ]; then
     # The quick look has no session words file: the asker's own message is turn 0 of a scratch one.
     # The used-words file stays in SESSION_DIR, so one message allows one write.

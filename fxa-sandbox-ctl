@@ -3463,9 +3463,9 @@ cmd_session() {
     # host-write <session key> --stdin --by <slack user> (--words <the asker's message> | --confirmed)   A quick look's
     # Jira comment, PR comment or new PR body (lib/asks.sh). Exit 3: needs-confirm, so the bot shows a card.
     host-write) _jira_key "${2:-}" && [ "${3:-}" = --stdin ] && [ "${4:-}" = --by ] && [[ "${5:-}" =~ ^[UW][A-Z0-9]{2,20}$ ]] \
-        && { { [ "${6:-}" = --words ] && [ $# -eq 7 ]; } || { [ "${6:-}" = --confirmed ] && [ $# -eq 6 ]; }; } \
-        || { echo "usage: session host-write <session key (agent-...)> --stdin --by <slack user> (--words <text> | --confirmed)" >&2; return 2; }
-      session_host_write "$2" "$5" "$([ "$6" = --words ] && printf '%s' "${7:-}")" "$([ "$6" = --confirmed ] && echo 1 || echo 0)" ;;
+        && { { [ "${6:-}" = --words ] && [ $# -eq 7 ]; } || { [[ "${6:-}" =~ ^--(confirmed|check)$ ]] && [ $# -eq 6 ]; }; } \
+        || { echo "usage: session host-write <session key (agent-...)> --stdin --by <slack user> (--words <text> | --confirmed | --check)" >&2; return 2; }
+      session_host_write "$2" "$5" "$([ "$6" = --words ] && printf '%s' "${7:-}")" "$(case "$6" in --confirmed) echo 1 ;; --check) echo check ;; *) echo 0 ;; esac)" ;;
     # The jira commands also take a quick answer's key, which has no record (the bot's key for the thread).
     # jira-draft <key> [--stdin] [--as <the thread's Jira key>]
     jira-draft) _jira_key "${2:-}" && { [ "${3:-}" != --as ] || _jira_key "${4:-}"; } && { [ "${4:-}" != --as ] || _jira_key "${5:-}"; } && session_jira_draft "${@:2}" ;;
