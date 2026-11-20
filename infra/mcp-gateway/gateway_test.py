@@ -721,6 +721,9 @@ class CircleCIConnector(unittest.TestCase):
                 return 200, [{"message": log}], None
             if p == "/signed/ec":
                 return 200, b"# Error details: element(s) not found", None
+            if p in ("/out/pw0", "/out/pw1"):
+                flaky = ["⚠️ Flaky tests (1):", "  tests/a.spec.ts:signs in", ""] if p.endswith("1") else []
+                return 200, [{"message": "\n".join(["Running 3 tests"] + ["ok %d" % i for i in range(40)] + flaky + ["3 passed"])}], None
             return 404, {}, None
         st = server(store, "store")
 
@@ -748,7 +751,14 @@ class CircleCIConnector(unittest.TestCase):
                                        {"result": "failure", "classname": "b.spec.ts", "name": "shows x", "message": "Timeout 10000ms"}]}, None
             if p == "/api/v1.1/project/github/mozilla/fxa/7":
                 return 200, {"steps": [{"name": "checkout", "actions": [{"failed": None}]},
-                                       {"name": "run tests", "actions": [{"failed": True, "output_url": st + "/out/7"}]}]}, None
+                                       {"name": "run tests", "actions": [{"failed": True, "output_url": st + "/out/7"}]},
+                                       {"name": "Running Playwright tests", "actions": [{"index": 0, "failed": None, "output_url": st + "/out/pw0"},
+                                                                                        {"index": 1, "failed": None, "output_url": st + "/out/pw1"}]}]}, None
+            if p == "/api/v2/insights/gh/mozilla/fxa/workflows/nightly/test-metrics?branch=main":
+                row = {"job_name": "Playwright (nightly)", "classname": "../tests/a.spec.ts", "file": "", "test_name": "signs in",
+                       "p95_duration": 157.94, "total_runs": 88, "failed_runs": 2, "flaky": False}
+                return 200, {"total_test_runs": 88, "average_test_count": 16046, "slowest_tests": [row] * 45,
+                             "most_failed_tests": [dict(row, file="/p/b.spec.ts")]}, None
             if p.startswith("/api/v2/project/gh/mozilla/fxa/7/artifacts"):
                 return 200, {"items": [{"path": "artifacts/x/error-context.md", "url": base + "/art/ec"},
                                        {"path": "artifacts/x/trace.zip", "url": base + "/art/tz"}]}, None
@@ -848,8 +858,34 @@ class CircleCIConnector(unittest.TestCase):
         self.assertTrue(self.call("list_pipelines", scope={"repos": ["mozilla/pyfxa"]})["isError"])
         self.assertEqual(self.up.list_tools()["list_pipelines"]["inputSchema"]["required"], ["owner", "repo"])
 
+    def test_a_named_step_that_passed_gives_its_log_on_each_node(self):
+        text = self.call("get_job", job_number=7, step="playwright", tail_lines=20)["content"][0]["text"]
+        self.assertIn('Step "Running Playwright tests", node 0:', text)
+        self.assertIn('Step "Running Playwright tests", node 1:', text)
+        self.assertNotIn("End of the failed step", text)
+        self.assertNotIn("/out/pw", text)
+        self.assertIn('No step name contains "nope".', self.call("get_job", job_number=7, step="nope")["content"][0]["text"])
+
+    def test_match_keeps_the_flaky_list_and_counts_the_nodes_without_one(self):
+        text = self.call("get_job", job_number=7, step="Running Playwright tests", match="flaky tests")["content"][0]["text"]
+        self.assertIn('node 1:\n⚠️ Flaky tests (1):\n  tests/a.spec.ts:signs in', text)
+        self.assertNotIn("node 0:", text)
+        self.assertNotIn("ok 1", text)
+        self.assertIn('1 step logs have no line with "flaky tests".', text)
+        for args in ({"step": ""}, {"step": "x" * 81}, {"match": 5}):
+            self.assertTrue(self.call("get_job", job_number=7, **args)["isError"], args)
+
+    def test_test_metrics_give_the_slowest_and_most_failed_tests_of_one_workflow(self):
+        out = json.loads(self.call("get_test_metrics", workflow="nightly")["content"][0]["text"])
+        self.assertEqual((out["runs"], len(out["slowest"])), (88, 40))
+        self.assertEqual(out["slowest"][0], {"job": "Playwright (nightly)", "spec": "../tests/a.spec.ts", "test": "signs in", "p95_s": 157.9, "runs": 88, "failed": 2})
+        self.assertEqual(out["most_failed"][0]["spec"], "/p/b.spec.ts")
+        for args in ({"workflow": "a/../b"}, {"workflow": "nightly", "branch": "main?x=1"}, {}):
+            self.assertTrue(self.call("get_test_metrics", **args)["isError"], args)
+        self.assertTrue(self.call("get_test_metrics", scope={"repos": ["mozilla/pyfxa"]}, workflow="nightly")["isError"])
+
     def test_only_read_tools_exist(self):
-        self.assertEqual(sorted(self.up.list_tools()), ["get_artifact_text", "get_job", "get_job_artifacts", "get_workflow_jobs", "list_pipelines"])
+        self.assertEqual(sorted(self.up.list_tools()), ["get_artifact_text", "get_job", "get_job_artifacts", "get_test_metrics", "get_workflow_jobs", "list_pipelines"])
         self.assertFalse(re.search(r"rerun|cancel|approve|POST", open(os.path.join(HERE, "gateway.py")).read().split("class CircleCI")[1].split("def load_upstreams")[0]))
 
 

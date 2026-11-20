@@ -739,7 +739,14 @@ class GitHubApp(Upstream):
 CI_TOOLS = {
     "get_workflow_jobs": ("A CircleCI workflow's jobs: name, status and job_number of each (for get_job).", {"workflow_id": "string"}),
     "get_job": ("A CircleCI job: its name and status, up to 50 failed tests, and the end of up to 3 failed steps "
-                "(tail_lines, default 200).", {"job_number": "integer", "tail_lines": "integer"}),
+                "(tail_lines, default 200). step: read the steps whose name contains this text, passed or failed, "
+                "on each parallel node. match: keep only the log lines that contain this text and the 10 lines after "
+                "each, such as \"Flaky tests\" in a Playwright step.",
+                {"job_number": "integer", "tail_lines": "integer", "step": "string", "match": "string"}),
+    "get_test_metrics": ("CircleCI's test metrics for one workflow on one branch (default main), over its last runs: "
+                         "the slowest tests by p95 seconds and the tests that failed most, each with its job, spec, runs "
+                         "and failed runs. Only a workflow that runs on that branch has data, such as nightly on main.",
+                         {"workflow": "string", "branch": "string"}),
     "get_job_artifacts": ("The paths of a CircleCI job's artifacts (for get_artifact_text).", {"job_number": "integer"}),
     "get_artifact_text": ("The text of one .md, .txt, .log, .xml or .json artifact of a CircleCI job, up to 40 KB, "
                           "such as a Playwright error-context.md.", {"job_number": "integer", "path": "string"}),
@@ -748,7 +755,8 @@ CI_TOOLS = {
                        "(for get_workflow_jobs). trigger=schedule keeps only the scheduled runs. limit: 1 to 20, default 10.",
                        {"branch": "string", "trigger": "string", "limit": "integer"}),
 }
-CI_OPTIONAL = {"tail_lines", "branch", "trigger", "limit"}
+CI_OPTIONAL = {"tail_lines", "branch", "trigger", "limit", "step", "match"}
+CI_WORKFLOW_RE = re.compile(r"[A-Za-z0-9_.-]{1,60}")
 CI_UUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 CI_TEXT_RE = re.compile(r"(?i).+\.(md|txt|log|xml|json)")
 CI_MAX = 20 << 20  # bytes of one download
@@ -836,6 +844,8 @@ class CircleCI(Upstream):
             return {"content": [{"type": "text", "text": json.dumps(out, indent=1)}]}
         if tool == "list_pipelines":
             return {"content": [{"type": "text", "text": json.dumps(self._pipelines(slug, args), indent=1)}]}
+        if tool == "get_test_metrics":
+            return {"content": [{"type": "text", "text": json.dumps(self._test_metrics(slug, args), indent=1)}]}
         n = args.get("job_number")
         if isinstance(n, str) and n.isdigit():
             n = int(n)
@@ -867,14 +877,55 @@ class CircleCI(Upstream):
                                        re.sub(r"\[\[ATTACHMENT\|[^]]*\]\]\s*", "", t.get("message") or "")[:300]) for t in failed[:50]]
         # v2 has no step logs; v1.1 lists each step with a signed link to its output, read with no token.
         build = json.loads(self._get("%s/api/v1.1/project/github/%s/%d" % (self.api, slug, n)))
-        steps = [(s.get("name"), a.get("output_url")) for s in build.get("steps") or [] for a in s.get("actions") or [] if a.get("failed") is True]
-        for name, url in steps[:3]:
-            parts.append('End of the failed step "%s":' % name)
-            if isinstance(url, str) and url:
-                msgs = json.loads(self._get(url, auth=False))
-                text = "".join(m.get("message") or "" for m in msgs if isinstance(m, dict))
-                parts += log_tail([re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", ln) for ln in text.splitlines()], args.get("tail_lines"))
+        want, match = args.get("step"), args.get("match")
+        for v, what in ((want, "step"), (match, "match")):
+            if v is not None and (not isinstance(v, str) or not 1 <= len(v) <= 80):
+                raise UpstreamError("%s: %s must be 1 to 80 characters of text" % (self.name, what))
+        acts = [(s.get("name"), a) for s in build.get("steps") or [] for a in s.get("actions") or [] if isinstance(a, dict)]
+        if want:
+            # A named step, passed or failed, on each parallel node: a Playwright step that passed lists its flaky tests.
+            steps = [(n_, a) for n_, a in acts if want.lower() in str(n_ or "").lower()][:12]
+            if not steps:
+                parts.append('No step name contains "%s".' % want)
+        else:
+            steps = [(n_, a) for n_, a in acts if a.get("failed") is True][:3]
+        quiet = 0
+        for name, a in steps:
+            url = a.get("output_url")
+            if not (isinstance(url, str) and url):
+                continue
+            msgs = json.loads(self._get(url, auth=False))
+            text = "".join(m.get("message") or "" for m in msgs if isinstance(m, dict))
+            lines = [re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", ln) for ln in text.splitlines()]
+            if match:
+                keep = sorted({j for i, ln in enumerate(lines) if match.lower() in ln.lower() for j in range(i, min(i + 11, len(lines)))})[:60]
+                if not keep:
+                    quiet += 1
+                    continue
+                lines = [lines[j] for j in keep]
+            else:
+                lines = log_tail(lines, args.get("tail_lines"))
+            head = 'Step "%s", node %s:' % (name, a.get("index", 0)) if want else 'End of the failed step "%s":' % name
+            parts += [head] + lines
+        if match and quiet:
+            parts.append('%d step logs have no line with "%s".' % (quiet, match))
         return {"content": [{"type": "text", "text": "\n".join(parts)}]}
+
+    def _test_metrics(self, slug, args):
+        wf, br = args.get("workflow"), args.get("branch") or "main"
+        if not isinstance(wf, str) or not CI_WORKFLOW_RE.fullmatch(wf):
+            raise UpstreamError("%s: workflow must be a workflow's name" % self.name)
+        if not isinstance(br, str) or not GH_REF_RE.fullmatch(br):
+            raise UpstreamError("%s: branch must be a plain branch name" % self.name)
+        doc = json.loads(self._get("%s/api/v2/insights/gh/%s/workflows/%s/test-metrics?%s" % (
+            self.api, slug, urllib.parse.quote(wf, safe=""), urllib.parse.urlencode({"branch": br}))))
+
+        def rows(key):
+            return [{"job": t.get("job_name"), "spec": t.get("file") or t.get("classname"), "test": str(t.get("test_name") or "")[:200],
+                     "p95_s": round(float(t.get("p95_duration") or 0), 1), "runs": t.get("total_runs"), "failed": t.get("failed_runs")}
+                    for t in (doc.get(key) or [])[:40] if isinstance(t, dict)]
+        return {"workflow": wf, "branch": br, "runs": doc.get("total_test_runs"), "average_test_count": doc.get("average_test_count"),
+                "slowest": rows("slowest_tests"), "most_failed": rows("most_failed_tests")}
 
     def _pipelines(self, slug, args):
         br, trig, lim = args.get("branch") or "main", args.get("trigger") or None, args.get("limit") or 10
