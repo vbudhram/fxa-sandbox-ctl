@@ -747,6 +747,37 @@ gh_pr_states_json() {
   rm -f "$tr" "$tm"
 }
 
+# gh_pr_comment <owner/repo> <PR number> <body>   Post one comment on the PR as the caller's GH_TOKEN, with the
+# AI-agent footer, and print its URL. One POST, no retry: after a failed reply, read back whether it landed.
+gh_pr_comment() {
+  local foot=$'\n\n_This comment is from an AI agent._' body="$3" url="" t
+  [[ "$body" == *"$foot" ]] || body="${body}${foot}"
+  t="$(date +%s)"
+  url="$(printf '%s' "$body" | gh api -X POST "repos/$1/issues/$2/comments" -F body=@- --jq .html_url 2>/dev/null)" || url=""
+  if [[ ! "$url" =~ ^https:// ]]; then
+    url="$(gh api --paginate "repos/$1/issues/$2/comments?per_page=100" 2>/dev/null | jq -rs --arg b "$body" --argjson t "$((t - 60))" \
+      '[add // [] | .[] | select(.body == $b and (.created_at | fromdateiso8601) >= $t)] | last | .html_url // empty' 2>/dev/null)" || url=""
+  fi
+  [[ "$url" =~ ^https:// ]] || return 1
+  printf '%s\n' "$url"
+}
+
+# gh_pr_body_set <owner/repo> <PR number> <body>   Replace the PR's body as the caller's GH_TOKEN. GitHub is public:
+# the PII guard checks it first. Prints "same" when the body already says it, else "updated" after a read back.
+gh_pr_body_set() {
+  local api="repos/$1/pulls/$2" url="https://github.com/$1/pull/$2" body="$3" old new d
+  d="$(mktemp)"; echo '{}' > "$d"
+  _finish_pii_guard "" "$d" "" "$body" "" /dev/null || { rm -f "$d"; return 1; }
+  rm -f "$d"
+  old="$(gh api "$api" --jq '.body // ""' 2>/dev/null)" || { echo "could not read $url" >&2; return 1; }
+  [ "$old" = "$body" ] && { echo same; return 0; }
+  # One write, no retry: the body is read back instead.
+  printf '%s' "$body" | gh api -X PATCH "$api" -F body=@- >/dev/null 2>&1 || true
+  new="$(gh api "$api" --jq '.body // ""' 2>/dev/null || true)"
+  [ "$new" = "$body" ] || { echo "GitHub did not take the new PR description for $url" >&2; return 1; }
+  echo updated
+}
+
 # ── GitHub App identity ────────────────────────────────────────
 # The pipeline can act as a GitHub App instead of the operator: the bot authors
 # the commit and the PR, GitHub signs the commit, and the operator's key and
@@ -784,6 +815,15 @@ _gh_app_installation() {
     "https://api.github.com/repos/${slug}/installation" | jq -r '.id // empty' 2>/dev/null)" || id=""
   if [[ "$id" =~ ^[0-9]+$ ]]; then printf '%s' "$id" > "$cache"; printf '%s' "$id"
   else printf '%s' "$GITHUB_APP_INSTALLATION_ID"; fi
+}
+
+# github_app_login   The App's own GitHub login ("<slug>[bot]"), the author of the PRs it opens. Cached for a day.
+github_app_login() {
+  local cache="${TMPDIR:-/tmp}/fxa-github-app-login.${GITHUB_APP_ID:-}" s
+  if [ -s "$cache" ] && [ "$(( $(date +%s) - $(_mtime "$cache") ))" -lt 86400 ]; then cat "$cache"; return 0; fi
+  s="$(_gh_jwt_conf | curl -sf --retry 3 --max-time 30 -K - -H "Accept: application/vnd.github+json" https://api.github.com/app | jq -r '.slug // empty' 2>/dev/null)" || s=""
+  [[ "$s" =~ ^[A-Za-z0-9-]+$ ]] || return 1
+  printf '%s[bot]' "$s" > "$cache"; printf '%s[bot]' "$s"
 }
 
 # github_app_token

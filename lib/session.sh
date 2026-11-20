@@ -233,6 +233,7 @@ Every turn, including later ones:
   'host: request-review [<PR URL>] <login> [<login>...]' asks GitHub logins to review;
   'host: ready [<PR URL>]' marks the PR ready for review; 'host: draft [<PR URL>]' makes it a draft;
   'host: comment [<PR URL>]' posts /workspace/.fxa-host-comment.md (write it first) as a PR comment;
+  'host: jira-comment <Jira key>' posts /workspace/.fxa-host-comment.md (write it first) as a comment on a ticket of the team's project;
   'host: add-repo <owner/repo>' clones one of the team's repos into this sandbox; the result says where,
   and whether it ships or is read-only;
   'host: investigate <Jira key>' starts the team's investigation of that ticket in its own sandbox: the result
@@ -1692,22 +1693,14 @@ session_create_jira() {
 # (after its 'pr-body: ready' line), with no wrap-up turn and no push. GitHub is public: the PII guard checks it first.
 # ponytail: the session's one pr_url only; a team stack's other PRs need a tree argument.
 session_pr_body() {
-  local key="$1" url body old new d api p
+  local key="$1" url body r p
   url="$(session_get "$key" pr_url)"; [ -n "$url" ] || { echo "no PR for $key" >&2; return 1; }
   p="$(_session_pr_parts "$key")" || { echo "not a GitHub PR: $url" >&2; return 1; }
   body="$(vm_exec_as_agent "$(worktree_branch_for "$key")" 'head -c 60000 /workspace/.fxa-pr-body-update.md 2>/dev/null; rm -f /workspace/.fxa-pr-body-update.md' 2>/dev/null || true)"
   body="$(printf '%s\n' "$body" | grep -vE 'Generated with \[?Claude Code|^https://claude\.ai/code/session_|^Claude-Session:' | _finish_soft_keys "$(session_get "$key" jira)" || true)"
   [ -n "${body//[[:space:]]/}" ] || { echo "the new PR body is missing or empty" >&2; return 1; }
-  d="$(mktemp)"; echo '{}' > "$d"
-  _finish_pii_guard "" "$d" "" "$body" "" /dev/null || { rm -f "$d"; return 1; }
-  rm -f "$d"
-  api="repos/${p%%$'\t'*}/pulls/${p#*$'\t'}"
-  old="$(gh api "$api" --jq '.body // ""' 2>/dev/null)" || { echo "could not read $url" >&2; return 1; }
-  [ "$old" = "$body" ] && { echo "The PR description already says that."; return 0; }
-  # One write, no retry: the body is read back instead.
-  printf '%s' "$body" | gh api -X PATCH "$api" -F body=@- >/dev/null 2>&1 || true
-  new="$(gh api "$api" --jq '.body // ""' 2>/dev/null || true)"
-  [ "$new" = "$body" ] || { echo "GitHub did not take the new PR description for $url" >&2; return 1; }
+  r="$(gh_pr_body_set "${p%%$'\t'*}" "${p#*$'\t'}" "$body")" || return 1
+  [ "$r" = same ] && { echo "The PR description already says that."; return 0; }
   _session_history_add "$key" action "Updated the description of ${url}"
   echo "Updated the PR description: ${url}"
 }

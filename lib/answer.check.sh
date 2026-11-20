@@ -147,4 +147,14 @@ check "no draft, or one that is not an object, is null" "null|null" \
 rules() { local x; x="$(_answer_rules)"; echo "$(grep -c '@@jira-draft {"type"' <<< "$x") $(grep -c fxa-jira-link <<< "$x")"; }
 check "the draft rule replaces the link skill only when drafts are on and the team has a project" "1 0|0 1|0 1" \
   "$(FXA_JIRA_DRAFTS=1 PIPE_PROFILE=fxa rules)|$(rules)|$(FXA_JIRA_DRAFTS=1 PIPE_PROFILE=monitor rules)"
+# Host writes: the last op line counts, every op line leaves the answer, and bad JSON is null.
+r="$(_answer_result ask-t014 1 '{"type":"result","result":"Ready.\n@@pr-comment {\"url\": \"https://github.com/mozilla/fxa/pull/1\", \"body\": \"old\"}\n@@jira-comment {\"key\": \"FXA-12\", \"body\": \"Line 1\\nLine 2\"}"}')"
+check "the last host write line wins and both lines leave the answer" '{"op":"jira-comment","key":"FXA-12","body":"Line 1\nLine 2"}|Ready.' \
+  "$(jq -c .host_write <<< "$r")|$(jq -r .answer <<< "$r")"
+r="$(_answer_result ask-t015 1 '{"type":"result","result":"New text.\n@@pr-body {\"url\": \"https://github.com/mozilla/fxa/pull/2\", \"body\": \"## Because\"}"}')"
+check "an @@pr-body line keeps its url" "pr-body|https://github.com/mozilla/fxa/pull/2|## Because|New text." \
+  "$(jq -r '[.host_write.op, .host_write.url, .host_write.body, .answer] | join("|")' <<< "$r")"
+check "bad JSON, a missing target or no line gives null, and the line still leaves the answer" "null|null|null|x" \
+  "$(_answer_result ask-t016 1 '{"type":"result","result":"x\n@@pr-comment {nope"}' | jq -c .host_write)|$(_answer_result ask-t017 1 '{"type":"result","result":"x\n@@jira-comment {\"body\": \"b\"}"}' | jq -c .host_write)|$(_answer_result ask-t018 1 '{"type":"result","result":"Hi."}' | jq -c .host_write)|$(_answer_result ask-t016 1 '{"type":"result","result":"x\n@@pr-comment {nope"}' | jq -r .answer)"
+check "the rules name the three host write lines" "3" "$(_answer_rules | grep -cE '^@@(jira-comment|pr-comment|pr-body) \{')"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

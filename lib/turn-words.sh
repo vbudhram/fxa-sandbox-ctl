@@ -46,6 +46,7 @@ words_match() {
     ready) verbs='mark|make|set' ;;
     draft) verbs='move' ;;
     comment) verbs='comment on|reply on|post on' ;;
+    pr-body) verbs='(update|change|edit|rewrite|fix|set)\s+(the\s+)?(pr\s+)?(description|body)' ;;
     add-repo) verbs='add|include' ;;
     investigate) verbs='investigate|look into|dig into' ;;
     *) return 1 ;;

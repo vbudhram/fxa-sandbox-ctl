@@ -179,6 +179,12 @@ Anthropic credential of its own:
   in the session history and `<key>.host-actions.jsonl`. Anyone else's request gets a card in the thread
   with the target as GitHub names it and the full masked comment body. Only a team admin's Allow runs it,
   once. A card expires (a Deny) when a person's next turn ends, and at most 3 wait at once.
+  `host: jira-comment <key>` posts a comment on a ticket of the team's Jira project, through the same gate and card.
+- **Quick-look writes.** A quick look writes a Jira comment, a PR comment or a new PR description, and ends
+  its reply with one line for it. The host does the write, never the agent. Only a team admin's request runs it,
+  and the admin's own message must name the action and the target; otherwise a team admin taps Apply on a card.
+  The scope is the team's Jira project and work repos. A new PR description goes only on a PR that the GitHub App
+  opened, or on the asker's own PR when the team record maps the asker to a GitHub login.
 - **`!sh <command>`.** The session's owner or a team admin runs one command between turns, with no model turn.
   On a team with runtime secrets, only a team admin may. The command goes on stdin and runs as `agent` for
   100 s at most, in a process session that the host kills at the end. The output is masked, a line goes to

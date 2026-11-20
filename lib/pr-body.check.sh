@@ -10,6 +10,7 @@ here="$(cd "$(dirname "$0")" && pwd)"; tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' 
 FINISH_LIB_DIR="$here"
 eval "$(sed -n '/^session_pr_body() {/,/^}/p;/^_session_pr_parts() {/,/^}/p' "$here/session.sh")"
 eval "$(sed -n '/^_finish_pii_guard() {/,/^}/p;/^_finish_soft_keys() {/,/^}/p' "$here/finish.sh")"
+eval "$(sed -n '/^gh_pr_body_set() {/,/^}/p' "$here/github.sh")"
 PR=https://github.com/mozilla/fxa/pull/7
 session_get() { case "$2" in pr_url) echo "$PR" ;; jira) echo FXA-1 ;; esac; }
 worktree_branch_for() { echo "agent-$1"; }

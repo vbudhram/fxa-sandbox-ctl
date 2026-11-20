@@ -11,6 +11,7 @@ FXA_SESSION_DIR="$tmp" source "$here/session.sh"
 source "$here/trees.sh"
 source "$here/turn-words.sh"
 source "$here/asks.sh"
+eval "$(sed -n '/^gh_pr_comment() {/,/^}/p' "$here/github.sh")"
 SESSION_DIR="$tmp"
 _session_db_sync() { :; }
 PIPE_PROFILE=fxa PIPE_REPO_SLUG=mozilla/fxa
@@ -54,7 +55,7 @@ check "ready marks the session's PR with its repo's token" "tok-for-mozilla/fxa|
 : > "$tmp/gh"; _ask_one $k 1 Ana 'request-review @alice bob' >/dev/null
 check "request-review posts the logins" "tok-for-mozilla/fxa|api -X POST repos/mozilla/fxa/pulls/5/requested_reviewers -f reviewers[]=alice -f reviewers[]=bob" "$(cat "$tmp/gh")"
 : > "$tmp/gh"; got="$(_ask_one $k 1 Ana 'comment')"
-check "comment posts the agent's file with tokens masked" "done: posted https://github.com/mozilla/fxa/pull/5#c1|Looks good.|ghp_<masked>" "$got|$(paste -sd'|' "$tmp/body")"
+check "comment posts the agent's file with tokens masked, with the AI-agent footer" "done: posted https://github.com/mozilla/fxa/pull/5#c1|Looks good.|ghp_<masked>||_This comment is from an AI agent._" "$got|$(paste -sd'|' "$tmp/body")"
 : > "$tmp/gh"; got="$(vm_exec_as_agent() { echo 'see metadata.google.internal'; }; _ask_one $k 1 Ana 'comment')"
 check "a direct comment with internal data is refused and not posted" "1|0" "$(grep -c 'must not go to GitHub' <<< "$got")|$(grep -c comments "$tmp/gh")"
 : > "$tmp/gh"; _ask_one $k 0 Bo 'ready' >/dev/null
@@ -121,7 +122,7 @@ check "a comment with internal data gets no card" "1" \
   "$(vm_exec_as_agent() { echo 'see metadata.google.internal'; }; _asks_card $k Bo comment | grep -c 'must not go to GitHub')"
 vm_exec_as_agent() { printf 'Swapped body.\n'; }
 : > "$tmp/gh"; asks_confirm $k "$(jq -r '.[0].nonce' <<< "$ev")" "$(jq -r '.[0].sha' <<< "$ev")" allow Ana 1 >/dev/null
-check "the allowed comment is the body the card showed" "Shown body.|ghp_<masked>" "$(paste -sd'|' "$tmp/body")"
+check "the allowed comment is the body the card showed" "Shown body.|ghp_<masked>||_This comment is from an AI agent._" "$(paste -sd'|' "$tmp/body")"
 
 # At most 3 wait; a Deny runs nothing; a lookalike repo gets no card; a person's next turn end expires them.
 new; asks_role "$k" 0 Bo

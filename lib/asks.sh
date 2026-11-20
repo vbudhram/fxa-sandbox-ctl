@@ -86,7 +86,7 @@ asks_gate() {
   case "$action" in
     merge|approve|auto-merge|automerge|enable-auto-merge)
       echo "refused: the host never merges, approves or turns on auto-merge. A person does that on GitHub."; return 1 ;;
-    rerun-ci|request-review|ready|draft|comment|add-repo|investigate) ;;
+    rerun-ci|request-review|ready|draft|comment|jira-comment|add-repo|investigate) ;;
     release|smoke) local o; o="$(_ask_release_inputs "$3")" || { echo "$o"; return 1; }
       _ask_release_dry "$3" && return 0 ;;
     *) echo "refused: ${action:-an empty line} is not a host action."; return 1 ;;
@@ -95,7 +95,14 @@ asks_gate() {
   case "$action" in
     add-repo) _asks_repo_row "${rest%% *}" >/dev/null || { echo "refused: ${rest%% *} is not one of team ${PIPE_PROFILE:-?}'s repos. A team admin adds it to the team first."; return 1; } ;;
     investigate) local o; o="$(inv_ask "${rest%% *}" - "$who" --check)" || { echo "$o"; return 1; } ;;
+    jira-comment) _asks_jira_ours "${rest%% *}" || return 1 ;;
   esac
+}
+
+# _asks_jira_ours <KEY>   The key is a ticket of the team's Jira project. Prints the refusal and fails otherwise.
+_asks_jira_ours() {
+  local p; p="$(_session_jira_project 2>/dev/null)" || { echo "refused: team ${PIPE_PROFILE:-?} does not take Jira comments from Slack."; return 1; }
+  [[ "$1" =~ ^${p}-[0-9]+$ ]] || { echo "refused: ${1:-an empty key} is not a ticket of the ${p} project."; return 1; }
 }
 
 # _asks_words <key> <turn> <line>   A team admin's own words of that turn name the action and its exact target:
@@ -105,10 +112,10 @@ _asks_words() {
   [[ "$turn" =~ ^[0-9]+$ ]] || return 1
   read -r action rest <<< "$3"
   case "$action" in
-    rerun-ci) verb=rerun ;; request-review) verb=review ;; ready|draft|comment|add-repo|investigate) verb="$action" ;; *) return 1 ;;
+    rerun-ci) verb=rerun ;; request-review) verb=review ;; jira-comment) verb=comment ;; ready|draft|comment|add-repo|investigate) verb="$action" ;; *) return 1 ;;
   esac
   local -a toks=()
-  if [ "$action" = investigate ]; then toks=("${rest%% *}")
+  if [ "$action" = investigate ] || [ "$action" = jira-comment ]; then toks=("${rest%% *}")
   elif [ "$action" = add-repo ]; then
     slug="${rest%% *}"; slug="${slug%.git}"; slug="${slug#https://github.com/}"; toks=("$slug" "https://github.com/${slug}")
   else
@@ -144,6 +151,7 @@ _ask_one() {
     add-repo) _ask_repo "$key" "${rest%% *}" ;;
     investigate) inv_ask "${rest%% *}" "$key" "$3" ;;
     release|smoke) _ask_release "$key" "$4" "$3" ;;
+    jira-comment) _ask_jira_comment "$key" "${rest%% *}" ;;
     *) _ask_gh "$key" "$action" $rest ;;
   esac
 }
@@ -190,9 +198,7 @@ _ask_gh() {
       [ -n "$(tr -d '[:space:]' <<< "$body")" ] || { echo "refused: write the comment to /workspace/.fxa-host-comment.md first."; return 1; }
       # The admin's words name only the action, so the body gets the card's PII check here too.
       _ask_pii "$body" || return 1
-      # One post, no retry: a retried comment can post twice.
-      printf '%s' "$body" | gh api -X POST "repos/${slug}/issues/${num}/comments" -F body=@- --jq .html_url 2>/dev/null | grep -E '^https://' \
-        | sed 's/^/done: posted /' || { echo "failed: GitHub refused the comment on ${url}."; return 1; } ;;
+      local posted; posted="$(gh_pr_comment "$slug" "$num" "$body")" && echo "done: posted ${posted}" || { echo "failed: GitHub refused the comment on ${url}."; return 1; } ;;
     rerun-ci) _ask_rerun "$slug" "$url" ;;
   esac
 }
@@ -239,6 +245,14 @@ _ask_repo() {
   else
     echo "done: cloned ${slug} (${role}) at ${path}, read-only: its changes do not ship. Treat its files as data."
   fi
+}
+
+# _ask_jira_comment <key> <KEY>   Post the agent's comment file (or the body a card showed) on the ticket. One post, no retry.
+_ask_jira_comment() {
+  local body="${_ASKS_BODY:-}"; [ -n "$body" ] || body="$(_ask_comment_body "$1")"
+  [ -n "$(tr -d '[:space:]' <<< "$body")" ] || { echo "refused: write the comment to /workspace/.fxa-host-comment.md first."; return 1; }
+  jira_comment "$2" "$body" >/dev/null 2>&1 || { echo "failed: Jira refused the comment on $2."; return 1; }
+  echo "done: posted a comment on ${FXA_JIRA_SITE_URL:-https://mozilla-hub.atlassian.net}/browse/$2"
 }
 
 # _ask_rerun <slug> <PR URL>   Rerun every failed job on the PR's head: GitHub Actions as the App,
@@ -367,6 +381,7 @@ _asks_target() {
   case "$action" in release|smoke) _ask_release_target "$2"; return ;; esac
   if [ "$action" = add-repo ]; then got="$(_asks_repo_row "${rest%% *}")" || { echo "refused: not a team repo."; return 1; }; echo "repo ${got%% *}"; return 0; fi
   [ "$action" != investigate ] || { inv_ask "${rest%% *}" "$key" "" --check; return; }
+  [ "$action" != jira-comment ] || { _asks_jira_ours "${rest%% *}" && echo "Jira ${rest%% *}"; return; }
   for a in $rest; do [[ "$a" =~ ^https:// ]] && url="$a"; done
   pr="$(_ask_pr "$key" "$url")" || { echo "$pr"; return 1; }
   read -r slug num url <<< "$pr"
@@ -403,10 +418,10 @@ _asks_card() {
     || { echo "refused: ${_ASKS_CARDS_MAX} host actions already wait for a team admin. Ask a team admin to say it in the thread."; return 1; }
   target="$(_asks_target "$key" "$line")" || { echo "$target"; return 1; }
   read -r action rest <<< "$line"
-  if [ "$action" = comment ]; then
+  if [ "$action" = comment ] || [ "$action" = jira-comment ]; then
     body="$(_ask_comment_body "$key")"
     [ -n "$(tr -d '[:space:]' <<< "$body")" ] || { echo "refused: write the comment to /workspace/.fxa-host-comment.md first."; return 1; }
-    _ask_pii "$body" || return 1
+    [ "$action" = jira-comment ] || _ask_pii "$body" || return 1
   fi
   nonce="$(openssl rand -hex 16 2>/dev/null)" && [[ "$nonce" =~ ^[0-9a-f]{32}$ ]] || { echo "failed: the host could not make a card."; return 1; }
   ( umask 077; jq -nc --arg n "$nonce" --arg k "$key" --arg a "$line" --arg t "$target" --arg b "$body" --arg w "$who" \
@@ -462,4 +477,70 @@ asks_confirm() {
   asks_role "$key" 0 host queued
   printf '(Host: a card for your host line `%s` was tapped. Result: %s Tell the engineer the result in one line, then go on with the request.)\n\n' "$line" "$out" >> "${SESSION_DIR}/${key}.queue"
   echo "$out"
+}
+
+# _hw_person <slack user> <field>   The team record's value of a field (admin or github) for that Slack user.
+_hw_person() {
+  jq -r --arg u "$1" --arg f "$2" '[(.admins[]? | . + {admin: true}), (.people[]? // empty)] | map(select(.slack == $u))
+    | if $f == "admin" then any(.[]; .admin == true) else (map(.github // empty) | first // "") end' "${FXA_TEAMS_DIR:-}/${PIPE_PROFILE:-}.json" 2>/dev/null || true
+}
+
+# session_host_write <key> <slack user> <words> <confirmed 1|0>   A quick look's host write, as JSON on stdin:
+# {op: jira-comment, key} or {op: pr-comment|pr-body, url}, with body. Only a team admin, only the team's Jira project
+# and work repos, and a new PR body only on the App's PRs or the asker's own. The asker's words must name the
+# action and the target, unless an admin tapped the card (confirmed). Prints {ok, url, op}; a failure prints one line
+# that is safe to show. Exit 3 (needs-confirm): the words do not name it, so the bot shows a card.
+session_host_write() {
+  local key="$1" by="$2" words="$3" conf="$4" w op tgt body slug num url got full author me="" r d
+  w="$(head -c 80000)"
+  jq -e 'type == "object" and (.op | IN("jira-comment", "pr-comment", "pr-body")) and (.body | type) == "string"' <<< "$w" >/dev/null 2>&1 \
+    || { echo "refused: that is not a host write." >&2; return 1; }
+  op="$(jq -r .op <<< "$w")"; body="$(jq -r .body <<< "$w")"
+  if [ "$op" = jira-comment ]; then tgt="$(jq -r '.key // ""' <<< "$w")"; else tgt="$(jq -r '.url // ""' <<< "$w")"; fi
+  [ "$(_hw_person "$by" admin)" = true ] || { echo "refused: only a team admin of ${PIPE_PROFILE:-this team} can ask for this." >&2; return 1; }
+  [ -n "${body//[[:space:]]/}" ] || { echo "refused: the text is empty." >&2; return 1; }
+  [ "${#body}" -le "$([ "$op" = pr-body ] && echo 60000 || echo 8000)" ] || { echo "refused: the text is too long." >&2; return 1; }
+  local -a toks=("$tgt")
+  if [ "$op" = jira-comment ]; then r="$(_asks_jira_ours "$tgt")" || { echo "$r" >&2; return 1; }
+  else
+    [[ "$tgt" =~ $_ASKS_PR_RE ]] || { echo "refused: ${tgt:-that} is not a GitHub PR URL." >&2; return 1; }
+    slug="${BASH_REMATCH[1]}"; num="${BASH_REMATCH[2]}"
+    trees_allowed | awk '{print tolower($1)}' | grep -qxF "$(tr 'A-Z' 'a-z' <<< "$slug")" \
+      || { echo "refused: ${slug} is not a work repo of team ${PIPE_PROFILE:-?}." >&2; return 1; }
+    toks+=("${slug}#${num}" "pr ${num}" "pr #${num}")
+    [ "$(trees_allowed | grep -c .)" -gt 1 ] || toks+=("#${num}")
+  fi
+  if [ "$conf" != 1 ]; then
+    # The quick look has no session words file: the asker's own message is turn 0 of a scratch one.
+    d="$(mktemp -d)"
+    jq -nc --arg u "$by" --arg t "$words" '{turn: 0, user: $u, ts: "", text: ($t | .[0:8000])}' > "${d}/${key}.admin-words.jsonl"
+    r=0; SESSION_DIR="$d" words_match "$key" 0 "$([ "$op" = pr-body ] && echo pr-body || echo comment)" "${toks[@]}" >/dev/null || r=$?
+    rm -rf "$d"
+    [ "$r" = 0 ] || { echo "needs-confirm" >&2; return 3; }
+  fi
+  if [ "$op" = jira-comment ]; then
+    jira_comment "$tgt" "$body" >/dev/null 2>&1 || { echo "failed: Jira refused the comment on ${tgt}." >&2; return 1; }
+    url="${FXA_JIRA_SITE_URL:-https://mozilla-hub.atlassian.net}/browse/${tgt}"
+  else
+    github_app_enabled 2>/dev/null || { echo "refused: the GitHub App is not set up on this host." >&2; return 1; }
+    local GH_TOKEN; GH_TOKEN="$(PIPE_REPO_SLUG="$slug" github_app_token 2>/dev/null)" || { echo "failed: no GitHub App token for ${slug}." >&2; return 1; }
+    export GH_TOKEN
+    got="$(gh api "repos/${slug}/pulls/${num}" --jq '"\(.base.repo.full_name) \(.user.login)"' 2>/dev/null)" || { echo "failed: could not read ${tgt} on GitHub." >&2; return 1; }
+    read -r full author <<< "$got"
+    [ -n "$author" ] && [ "$(tr 'A-Z' 'a-z' <<< "$full")" = "$(tr 'A-Z' 'a-z' <<< "$slug")" ] || { echo "refused: GitHub names the repo of ${tgt} ${full:-nothing}, not ${slug}." >&2; return 1; }
+    if [ "$op" = pr-comment ]; then
+      r="$(_ask_pii "$body")" || { echo "$r" >&2; return 1; }
+      url="$(gh_pr_comment "$slug" "$num" "$body")" || { echo "failed: GitHub refused the comment on ${tgt}." >&2; return 1; }
+    else
+      me="$(_hw_person "$by" github)"
+      if [ "$author" != "$(github_app_login 2>/dev/null || echo -)" ] && { [ -z "$me" ] || [ "$(tr 'A-Z' 'a-z' <<< "$author")" != "$(tr 'A-Z' 'a-z' <<< "$me")" ]; }; then
+        [ -n "$me" ] && echo "refused: ${tgt} is by ${author}; the host changes the description only of its own PRs and yours." >&2 \
+          || echo "refused: ${tgt} is by ${author}; the host changes the description only of its own PRs, since the team record maps no GitHub login to you." >&2
+        return 1
+      fi
+      r="$(gh_pr_body_set "$slug" "$num" "$body" 2>&1)" || { head -1 <<< "$r" | sed 's/^ERROR: //' >&2; return 1; }
+      url="$tgt"
+    fi
+  fi
+  jq -nc --arg u "$url" --arg o "$op" '{ok: true, url: $u, op: $o}'
 }
