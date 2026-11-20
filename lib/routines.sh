@@ -577,14 +577,25 @@ prfix_sweep() {
 
 # ── Investigations (on jira-label): a team admin's label on a public ticket queues a report-only run ──
 
-_INV_NOT_ADMIN="🤖 Only a team admin can start an investigation. Ask one to add %s."
-_INV_TWICE="🤖 The investigation of this ticket failed twice in 24 hours, so I do not start it again now. Add %s again later."
-_INV_NO_ADDER="🤖 I cannot tell who added %s, so I do not start an investigation. A team admin can add it again."
-_INV_NO_START="🤖 The investigation did not start: %s. Add %s again to retry."
+_INV_NOT_ADMIN='::warning
+Only a team admin can start an investigation. Ask one to add %s.'
+_INV_TWICE='::warning
+The investigation of this ticket failed twice in 24 hours, so I do not start it again now. Add %s again later.'
+_INV_NO_ADDER='::warning
+I cannot tell who added %s, so I do not start an investigation. A team admin can add it again.'
+_INV_NO_START='::warning
+The investigation did not start: %s. Add %s again to retry.'
 _INV_MOST=3
 
-# _inv_note <key> <text>   One comment on the ticket, led by 🤖 (jira_comment adds the 🤖 itself for a person's login).
-_inv_note() { if _jira_sa; then jira_comment "$1" "$2"; else jira_comment "$1" "${2#🤖 }"; fi; }
+# _inv_note <key> <text>   One comment on the ticket (jira_comment adds 🤖 for a person's login). A text with no
+# panel line is a result: it gets the format of the other pipeline comments, an info panel and bold labels.
+_inv_note() { case "$2" in ::*) jira_comment "$1" "$2" ;; *) jira_comment "$1" "$(_inv_jira <<< "$2")" ;; esac; }
+_inv_jira() {
+  printf '::info\n'
+  sed -E '1s/^Investigation of [A-Z][A-Z0-9]*-[0-9]+ \(run ([0-9]+)\) · /**Investigation** · run \1 · /
+    2,$s/^(Ask|Cause|Evidence|Since the last run|Fix|Tests|Verify|Acceptance|Risks|Not checked|Related|Files|Details):/**\1:**/
+    $s/add the ai-fixme label/add the **ai-fixme** label/'
+}
 # _inv_unlabel <key> <label>   Remove the label; exit 1 when Jira refused, so nothing more happens to the ticket.
 _inv_unlabel() { acli jira workitem edit -k "$1" --remove-labels "$2" -y >/dev/null 2>&1; }
 # _inv_no_start <run>   One comment on the ticket of an investigation run that just failed before its session ran: its

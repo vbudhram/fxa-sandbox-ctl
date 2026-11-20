@@ -734,7 +734,7 @@ def inv_render(inv, key, run, slug, site, paths):
     for t in inv["fix"]["tests"]:
         if t["file"] not in paths:
             t["file"] = None
-    ln = [f"🤖 Investigation of {key} (run {run})  ·  confidence: {inv['confidence']}", f"Ask: {inv['ask']}", f"Cause: {inv['cause']}"]
+    ln = [f"Investigation of {key} (run {run}) · confidence: {inv['confidence']}", f"Ask: {inv['ask']}", f"Cause: {inv['cause']}"]
     if inv["evidence"]:
         ln += ["Evidence:"] + [f"- {e}" for e in inv["evidence"]]
     if inv["since_last"]:
@@ -763,7 +763,7 @@ def inv_render(inv, key, run, slug, site, paths):
 
 def inv_short(full, inv, key, run, slug, site):
     """The comment when the full plan is attached: the cause, the fix and its files, and the file's name."""
-    ln = [f"🤖 Investigation of {key} (run {run})  ·  confidence: {inv['confidence']}", f"Cause: {sentence(inv['cause'], 300)}"]
+    ln = [f"Investigation of {key} (run {run}) · confidence: {inv['confidence']}", f"Cause: {sentence(inv['cause'], 300)}"]
     if inv["since_last"]:
         ln.append(f"Since the last run: {sentence(inv['since_last'], 200)}")
     fx = inv["fix"]

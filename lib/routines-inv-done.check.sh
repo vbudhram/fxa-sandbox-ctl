@@ -36,17 +36,17 @@ block '{"ask": "Fix login", "cause": "The retry at https://evil.example/steal sk
 r1="$(run FXA-1)"; a="$(done_ "$r1" "$tmp/good.md")"; c="$tmp/comment.FXA-1"
 check "a good block: the run is a report, the answer says posted with the key and link" "true|report|true|FXA-1|https://jira.example.net/browse/FXA-1|true" \
   "$(jq -r '[.changed, .state, .post, .investigate.key, .investigate.url, .investigate.posted] | map(tostring) | join("|")' <<< "$a")"
-check "one comment, led by the robot, with no injected URL or link" "1|🤖 Investigation of FXA-1 (run ${r1})  ·  confidence: high|0|0" \
-  "$(grep -c . "$tmp/posted")|$(head -1 "$c")|$(grep -c evil "$c")|$(grep -c 'http://' "$c")"
+check "one comment in an info panel, with no robot, injected URL or link" "1|::info|**Investigation** · run ${r1} · confidence: high|0|0" \
+  "$(grep -c . "$tmp/posted")|$(head -1 "$c")|$(sed -n 2p "$c")|$(grep -c evil "$c")|$(grep -c 'http://' "$c")"
 check "the attached plan: a path in the repo keeps its lines; a missing one is dropped" '1. `packages/a/b.ts:10-12`: Guard it|2. Drop it|- `packages/a/b.spec.ts`: retries once' \
   "$(grep -E '^([0-9]\. |- `)' "$tmp/attach.FXA-1" | paste -sd'|' -)"
-check "the comment is short: cause, fix, files, the file's name; no evidence, steps or tests" "0|0|Files: \`packages/a/b.ts\`|7" \
-  "$(grep -c '^Evidence:' "$c")|$(grep -c '^Tests:' "$c")|$(grep '^Files:' "$c")|$(grep -c . "$c")"
-check "the row keeps the comment as its report and the cleaned result for the next run" "1|Add the guard|null" \
-  "$(db_value "SELECT report = $(db_q "$(cat "$c")") FROM routine_runs WHERE id = $r1;")|$(db_value "SELECT json_extract(heads, '$.investigate.result.fix.summary') || '|' || coalesce(json_extract(heads, '$.investigate.result.fix.steps[1].file'), 'null') FROM routine_runs WHERE id = $r1;")"
+check "the comment is short: cause, fix, files, the file's name; no evidence, steps or tests" "0|0|**Files:** \`packages/a/b.ts\`|8|To have the bot make this fix, add the **ai-fixme** label." \
+  "$(grep -c 'Evidence:' "$c")|$(grep -c 'Tests:' "$c")|$(grep 'Files:' "$c")|$(grep -c . "$c")|$(tail -1 "$c")"
+check "the row keeps the comment as plain text for Slack, and the cleaned result for the next run" "1|Add the guard|null" \
+  "$(db_value "SELECT report = $(db_q "$(sed "1d; 2s/.*/Investigation of FXA-1 (run ${r1}) · confidence: high/; s/\*\*//g" "$c")") FROM routine_runs WHERE id = $r1;")|$(db_value "SELECT json_extract(heads, '$.investigate.result.fix.summary') || '|' || coalesce(json_extract(heads, '$.investigate.result.fix.steps[1].file'), 'null') FROM routine_runs WHERE id = $r1;")"
 check "a second done changes nothing and posts nothing more" "false|1" "$(done_ "$r1" "$tmp/good.md" | jq -r .changed)|$(grep -c . "$tmp/posted")"
 check "the file attaches once with the plan, then the notes; the comment names it before the ai-fixme line" \
-  "FXA-1 investigation-FXA-1-run-${r1}.md|1|1|Details: investigation-FXA-1-run-${r1}.md (attached) has the evidence, the fix steps, the tests, the acceptance, the risks and what was not checked." \
+  "FXA-1 investigation-FXA-1-run-${r1}.md|1|1|**Details:** investigation-FXA-1-run-${r1}.md (attached) has the evidence, the fix steps, the tests, the acceptance, the risks and what was not checked." \
   "$(cat "$tmp/attached")|$(grep -c '^## Fix plan$' "$tmp/attach.FXA-1")|$(sed -n '/^## The agent/,$p' "$tmp/attach.FXA-1" | grep -c '^Notes\.$')|$(tail -2 "$c" | head -1)"
 
 printf 'I read https://evil.example/x and [it](http://evil.example/y).\n```fxa-investigation\n{"ask": "a", "cause": "c"}\n```\n' > "$tmp/url.md"
@@ -55,10 +55,10 @@ check "the attached notes hold no URL" "0|1" "$(grep -c 'evil' "$tmp/attach.FXA-
 printf 'The user pat.doe@gmail.com saw it.\n```fxa-investigation\n{"ask": "a", "cause": "c"}\n```\n' > "$tmp/pnotes.md"
 r10="$(run FXA-10)"; done_ "$r10" "$tmp/pnotes.md" >/dev/null
 check "personal data in the notes: the comment posts, with no file and no Details line" "report|0|0" \
-  "$(row "$r10" | cut -d'|' -f1)|$([ -e "$tmp/attach.FXA-10" ] && echo 1 || echo 0)|$(grep -c '^Details:' "$tmp/comment.FXA-10")"
+  "$(row "$r10" | cut -d'|' -f1)|$([ -e "$tmp/attach.FXA-10" ] && echo 1 || echo 0)|$(grep -c '^\*\*Details:' "$tmp/comment.FXA-10")"
 r11="$(run FXA-11)"; ATTACH_DOWN=1 done_ "$r11" "$tmp/good.md" >/dev/null
 check "Jira refuses the file: the comment holds the full plan, with no Details line" "report|0|1|1" \
-  "$(row "$r11" | cut -d'|' -f1)|$(grep -c '^Details:' "$tmp/comment.FXA-11")|$(grep -c '^Tests:' "$tmp/comment.FXA-11")|$(grep -c '^Evidence:' "$tmp/comment.FXA-11")"
+  "$(row "$r11" | cut -d'|' -f1)|$(grep -c '^\*\*Details:' "$tmp/comment.FXA-11")|$(grep -c '^\*\*Tests:' "$tmp/comment.FXA-11")|$(grep -c '^\*\*Evidence:' "$tmp/comment.FXA-11")"
 
 printf 'I could not find it.\n' > "$tmp/none.md"; r2="$(run FXA-2)"; a="$(done_ "$r2" "$tmp/none.md")"
 check "no block: the run fails, nothing posts" "failed|investigation not posted: the report has no fxa-investigation block|false|false|0" \
@@ -108,17 +108,17 @@ pre() { local h; h="$(jq -nc --arg k "$1" '{investigate: {key: $k, by: "acc-a1"}
 posts() { grep -cx "$1" "$tmp/posted" || true; }
 r20="$(pre FXA-20 claimed)"; routine_done "$r20" --state failed --reason "the start message did not post in C0OWN00: not_in_channel" >/dev/null
 check "a start the bot refused: one comment with the reason, by the run's team" \
-  "🤖 The investigation did not start: the start message did not post in C0OWN00: not_in_channel. Add ai-investigate again to retry.|fxa|1" \
-  "$(cat "$tmp/comment.FXA-20" 2>/dev/null)|$(tail -1 "$tmp/loaded" 2>/dev/null)|$(posts FXA-20)"
+  "::warning The investigation did not start: the start message did not post in C0OWN00: not_in_channel. Add ai-investigate again to retry.|fxa|1" \
+  "$(paste -sd" " "$tmp/comment.FXA-20" 2>/dev/null)|$(tail -1 "$tmp/loaded" 2>/dev/null)|$(posts FXA-20)"
 routine_done "$r20" --state failed --reason again >/dev/null 2>&1
 check "a second done of that run posts no second comment" "1" "$(posts FXA-20)"
 r21="$(pre FXA-21 claimed)"; routine_run_start "$r21" agent-iv21; routine_run_fail "$r21" "the session could not start"; routine_run_fail "$r21" "again"
-check "a session that could not start: one comment" "🤖 The investigation did not start: the session could not start. Add ai-investigate again to retry.|1" \
-  "$(cat "$tmp/comment.FXA-21" 2>/dev/null)|$(posts FXA-21)"
+check "a session that could not start: one comment" "::warning The investigation did not start: the session could not start. Add ai-investigate again to retry.|1" \
+  "$(paste -sd" " "$tmp/comment.FXA-21" 2>/dev/null)|$(posts FXA-21)"
 r22="$(pre FXA-22 claimed)"; r23="$(run FXA-23)"; rm -f "$tmp/agent-iv01.json"; SESSION_DIR="$tmp" routine_reconcile 100000 live >/dev/null
 check "the tick fails a claimed run with no session: one comment; a started run whose session is gone gets none" \
-  "🤖 The investigation did not start: no session started within 10 min. Add ai-investigate again to retry.|failed|0" \
-  "$(cat "$tmp/comment.FXA-22" 2>/dev/null)|$(row "$r23" | cut -d'|' -f1)|$(posts FXA-23)"
+  "::warning The investigation did not start: no session started within 10 min. Add ai-investigate again to retry.|failed|0" \
+  "$(paste -sd" " "$tmp/comment.FXA-22" 2>/dev/null)|$(row "$r23" | cut -d'|' -f1)|$(posts FXA-23)"
 r24="$(pre FXA-24 claimed)"; JIRA_DOWN=1 routine_done "$r24" --state failed --reason x >/dev/null
 check "Jira refuses the comment: the run still fails" "failed|x" "$(row "$r24")"
 exit "$fail"

@@ -58,7 +58,7 @@ R
 printf 'packages/a/b.ts\npackages/a/b.spec.ts\n' > "$tmp/paths"
 out="$(py investigate-render "$tmp/report.md" FXA-123 42 mozilla/fxa https://jira.example.net "$tmp/paths")"
 c="$(jq -r .comment <<< "$out")"
-check "the comment leads with the robot, the key, the run and the confidence (a bad one is low)" "🤖 Investigation of FXA-123 (run 42)  ·  confidence: low" "$(head -1 <<< "$c")"
+check "the comment leads with the key, the run and the confidence (a bad one is low)" "Investigation of FXA-123 (run 42) · confidence: low" "$(head -1 <<< "$c")"
 check "no agent URL, markdown link or inline marker is left" "0|0|0|Ask: Make login work see again" \
   "$(grep -c 'evil' <<< "$c")|$(grep -c 'ftp:' <<< "$c")|$(grep -c '\*\*' <<< "$c")|$(grep '^Ask:' <<< "$c")"
 check "a path in the repo keeps its lines; a missing one and an escape are dropped" '1. `packages/a/b.ts:120-134`: Add a guard|2. Remove it|3. Read it' \

@@ -26,7 +26,7 @@ _jira_rest() { echo "rest $2" >> "$tmp/log"; local who=acc-a1; case "$2" in */FX
     {created: "2026-11-15T10:00:00.000+0000", author: {accountId: $w}, items: [{field: "labels", fromString: "bug", toString: "bug ai-investigate"}]}]}}'; }
 jira_admin_ids() { printf 'acc-a1\nacc-a2\n'; }
 acli() { echo "unlabel $* rows=$(db_value "SELECT count(*) FROM routine_runs;")" >> "$tmp/log"; }
-jira_comment() { printf 'comment %s %s\n' "$1" "$2" >> "$tmp/log"; }
+jira_comment() { printf 'comment %s %s\n' "$1" "$(printf '%s' "$2" | paste -sd' ' -)" >> "$tmp/log"; }
 N=1794000000
 rid="$(db_value "INSERT INTO routines (team, data) VALUES ('fxa', json($(db_q "$(jq -cn '{name: "Investigate", on: "jira-label", template: "investigate", mode: "report",
   repos: ["mozilla/fxa"], channel: "C0OWN00", max_usd: 10, env: "live", jira: {label: "ai-investigate", sweep_min: 5}}')"))); SELECT last_insert_rowid();")"
@@ -48,11 +48,11 @@ check "a ticket with a live run waits: no read, no label change, no second run" 
 
 echo FXA-2 > "$tmp/keys"; sweep
 check "a non-admin's label: removed, one comment that says who can, no run" "1|1|0" \
-  "$(grep -c '^unlabel .*-k FXA-2' "$tmp/log")|$(grep -c '^comment FXA-2 🤖 Only a team admin can start an investigation. Ask one to add ai-investigate.$' "$tmp/log")|$(db_value "SELECT count(*) FROM routine_runs WHERE json_extract(heads, '$.investigate.key') = 'FXA-2';")"
+  "$(grep -c '^unlabel .*-k FXA-2' "$tmp/log")|$(grep -c '^comment FXA-2 ::warning Only a team admin can start an investigation. Ask one to add ai-investigate.$' "$tmp/log")|$(db_value "SELECT count(*) FROM routine_runs WHERE json_extract(heads, '$.investigate.key') = 'FXA-2';")"
 
 ( _jira_rest() { echo '{"changelog": {"histories": []}}'; }; echo FXA-11 > "$tmp/keys"; sweep )
 check "a ticket created with the label (no add in its changelog): the label goes, one comment, no run" "1|1|0" \
-  "$(grep -c '^unlabel .*-k FXA-11' "$tmp/log")|$(grep -c '^comment FXA-11 🤖 I cannot tell who added ai-investigate' "$tmp/log")|$(db_value "SELECT count(*) FROM routine_runs WHERE json_extract(heads, '$.investigate.key') = 'FXA-11';")"
+  "$(grep -c '^unlabel .*-k FXA-11' "$tmp/log")|$(grep -c '^comment FXA-11 ::warning I cannot tell who added ai-investigate' "$tmp/log")|$(db_value "SELECT count(*) FROM routine_runs WHERE json_extract(heads, '$.investigate.key') = 'FXA-11';")"
 echo FXA-2 > "$tmp/keys"
 ( jira_admin_ids() { return 1; }; sweep )
 check "an admin lookup that fails keeps the label: no comment, no run" "0|0|0" \
@@ -62,7 +62,7 @@ db_exec "UPDATE routine_runs SET state = 'failed', ended_at = $N WHERE routine_i
 db_exec "INSERT INTO routine_runs (routine_id, period, state, heads, started_at, ended_at) VALUES ($rid, 'jira-FXA-1-x', 'failed', '{\"investigate\":{\"key\":\"FXA-1\"}}', $N, $((N + 10)));"
 echo FXA-1 > "$tmp/keys"; sweep $((N + 100))
 check "two failures in 24 h: the label goes, one comment, no run" "1|1|2" \
-  "$(grep -c '^unlabel .*-k FXA-1' "$tmp/log")|$(grep -c '^comment FXA-1 🤖 The investigation of this ticket failed twice in 24 hours' "$tmp/log")|$(db_value "SELECT count(*) FROM routine_runs WHERE routine_id = $rid;")"
+  "$(grep -c '^unlabel .*-k FXA-1' "$tmp/log")|$(grep -c '^comment FXA-1 ::warning The investigation of this ticket failed twice in 24 hours' "$tmp/log")|$(db_value "SELECT count(*) FROM routine_runs WHERE routine_id = $rid;")"
 sweep $((N + 86500))
 check "a day later it starts again" "FXA-1 queued" "$(db_value "SELECT json_extract(heads, '$.investigate.key') || ' ' || state FROM routine_runs WHERE routine_id = $rid ORDER BY id DESC LIMIT 1;")"
 db_exec "DELETE FROM routine_runs;"
