@@ -764,6 +764,11 @@ gh_pr_comment() {
 
 # gh_pr_body_set <owner/repo> <PR number> <body>   Replace the PR's body as the caller's GH_TOKEN. GitHub is public:
 # the PII guard checks it first. Prints "same" when the body already says it, else "updated" after a read back.
+# _pr_body_clean <own Jira key>   A new PR body on stdin without the Claude Code footer lines, and with other tickets' keys soft.
+_pr_body_clean() {
+  grep -vE 'Generated with \[?Claude Code|^https://claude\.ai/code/session_|^Claude-Session:' | _finish_soft_keys "$1" || true
+}
+
 gh_pr_body_set() {
   local api="repos/$1/pulls/$2" url="https://github.com/$1/pull/$2" body="$3" old new d
   d="$(mktemp)"; echo '{}' > "$d"

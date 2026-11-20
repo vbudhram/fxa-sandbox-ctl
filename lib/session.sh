@@ -1697,7 +1697,7 @@ session_pr_body() {
   url="$(session_get "$key" pr_url)"; [ -n "$url" ] || { echo "no PR for $key" >&2; return 1; }
   p="$(_session_pr_parts "$key")" || { echo "not a GitHub PR: $url" >&2; return 1; }
   body="$(vm_exec_as_agent "$(worktree_branch_for "$key")" 'head -c 60000 /workspace/.fxa-pr-body-update.md 2>/dev/null; rm -f /workspace/.fxa-pr-body-update.md' 2>/dev/null || true)"
-  body="$(printf '%s\n' "$body" | grep -vE 'Generated with \[?Claude Code|^https://claude\.ai/code/session_|^Claude-Session:' | _finish_soft_keys "$(session_get "$key" jira)" || true)"
+  body="$(printf '%s\n' "$body" | _pr_body_clean "$(session_get "$key" jira)")"
   [ -n "${body//[[:space:]]/}" ] || { echo "the new PR body is missing or empty" >&2; return 1; }
   r="$(gh_pr_body_set "${p%%$'\t'*}" "${p#*$'\t'}" "$body")" || return 1
   [ "$r" = same ] && { echo "The PR description already says that."; return 0; }

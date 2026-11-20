@@ -404,7 +404,7 @@ _asks_cards() {
 _ask_pii() {
   local t hits; t="$(mktemp)"; jq -n --arg b "$1" '{comment: $b}' > "$t"
   hits="$(python3 -I "${SANDBOX_ROOT}/lib/pii_guard.py" "$t" /dev/null 2>/dev/null | sed 's/ line [0-9]*//' | sort -u | paste -sd, - || true)"; rm -f "$t"
-  [ -z "$hits" ] || { echo "refused: the comment has text that must not go to GitHub (${hits})."; return 1; }
+  [ -z "$hits" ] || { echo "refused: the text has words that must not go to GitHub (${hits})."; return 1; }
 }
 
 # _asks_card <key> <who> <line>   An ask that no team admin's own words allowed: a card in the thread that a team
@@ -490,17 +490,34 @@ _hw_person() {
 # and work repos, and a new PR body only on the App's PRs or the asker's own. The asker's words must name the
 # action and the target, unless an admin tapped the card (confirmed). Prints {ok, url, op}; a failure prints one line
 # that is safe to show. Exit 3 (needs-confirm): the words do not name it, so the bot shows a card.
+# Each call adds a row to <key>.host-actions.jsonl.
 session_host_write() {
-  local key="$1" by="$2" words="$3" conf="$4" w op tgt body slug num url got full author me="" r d
-  w="$(head -c 80000)"
+  local key="$1" w out="" rc=0 e
+  # 4x the longest body: JSON escapes and multibyte text make the bytes larger than the characters.
+  w="$(head -c 262144)"; e="$(mktemp)"
+  out="$(printf '%s' "$w" | _hw_run "$@" 2>"$e")" || rc=$?
+  jq -nc --arg k "$key" --arg by "$2" --argjson c "$([ "$4" = 1 ] && echo true || echo false)" \
+    --arg r "$(if [ "$rc" = 0 ]; then printf 'ok %s' "$(jq -r .url <<< "$out")"; else head -1 "$e"; fi)" \
+    --argjson t "$(jq -c '{op: (.op // "" | tostring | .[0:40]), target: (.key // .url // "" | tostring | .[0:300])}' <<< "$w" 2>/dev/null || echo '{}')" \
+    '{at: now, key: $k, by: $by} + $t + {confirmed: $c, result: $r}' >> "${SESSION_DIR}/${key}.host-actions.jsonl" 2>/dev/null || true
+  cat "$e" >&2; rm -f "$e"
+  [ -z "$out" ] || printf '%s\n' "$out"
+  return "$rc"
+}
+
+_hw_run() {
+  local key="$1" by="$2" words="$3" conf="$4" w op tgt body slug num url got full author me="" r d claim=""
+  w="$(cat)"
   jq -e 'type == "object" and (.op | IN("jira-comment", "pr-comment", "pr-body")) and (.body | type) == "string"' <<< "$w" >/dev/null 2>&1 \
     || { echo "refused: that is not a host write." >&2; return 1; }
   op="$(jq -r .op <<< "$w")"; body="$(jq -r .body <<< "$w")"
   if [ "$op" = jira-comment ]; then tgt="$(jq -r '.key // ""' <<< "$w")"; else tgt="$(jq -r '.url // ""' <<< "$w")"; fi
   [ "$(_hw_person "$by" admin)" = true ] || { echo "refused: only a team admin of ${PIPE_PROFILE:-this team} can ask for this." >&2; return 1; }
-  [ -n "${body//[[:space:]]/}" ] || { echo "refused: the text is empty." >&2; return 1; }
+  # Not ${body//[[:space:]]/}: bash 3.2 takes minutes on a 60000-character body.
+  [[ "$body" == *[![:space:]]* ]] || { echo "refused: the text is empty." >&2; return 1; }
   [ "${#body}" -le "$([ "$op" = pr-body ] && echo 60000 || echo 8000)" ] || { echo "refused: the text is too long." >&2; return 1; }
   local -a toks=("$tgt")
+  # Every check that can refuse runs before the words gate, so the bot never shows a card that cannot run.
   if [ "$op" = jira-comment ]; then r="$(_asks_jira_ours "$tgt")" || { echo "$r" >&2; return 1; }
   else
     [[ "$tgt" =~ $_ASKS_PR_RE ]] || { echo "refused: ${tgt:-that} is not a GitHub PR URL." >&2; return 1; }
@@ -509,38 +526,48 @@ session_host_write() {
       || { echo "refused: ${slug} is not a work repo of team ${PIPE_PROFILE:-?}." >&2; return 1; }
     toks+=("${slug}#${num}" "pr ${num}" "pr #${num}")
     [ "$(trees_allowed | grep -c .)" -gt 1 ] || toks+=("#${num}")
-  fi
-  if [ "$conf" != 1 ]; then
-    # The quick look has no session words file: the asker's own message is turn 0 of a scratch one.
-    d="$(mktemp -d)"
-    jq -nc --arg u "$by" --arg t "$words" '{turn: 0, user: $u, ts: "", text: ($t | .[0:8000])}' > "${d}/${key}.admin-words.jsonl"
-    r=0; SESSION_DIR="$d" words_match "$key" 0 "$([ "$op" = pr-body ] && echo pr-body || echo comment)" "${toks[@]}" >/dev/null || r=$?
-    rm -rf "$d"
-    [ "$r" = 0 ] || { echo "needs-confirm" >&2; return 3; }
-  fi
-  if [ "$op" = jira-comment ]; then
-    jira_comment "$tgt" "$body" >/dev/null 2>&1 || { echo "failed: Jira refused the comment on ${tgt}." >&2; return 1; }
-    url="${FXA_JIRA_SITE_URL:-https://mozilla-hub.atlassian.net}/browse/${tgt}"
-  else
     github_app_enabled 2>/dev/null || { echo "refused: the GitHub App is not set up on this host." >&2; return 1; }
     local GH_TOKEN; GH_TOKEN="$(PIPE_REPO_SLUG="$slug" github_app_token 2>/dev/null)" || { echo "failed: no GitHub App token for ${slug}." >&2; return 1; }
     export GH_TOKEN
     got="$(gh api "repos/${slug}/pulls/${num}" --jq '"\(.base.repo.full_name) \(.user.login)"' 2>/dev/null)" || { echo "failed: could not read ${tgt} on GitHub." >&2; return 1; }
     read -r full author <<< "$got"
     [ -n "$author" ] && [ "$(tr 'A-Z' 'a-z' <<< "$full")" = "$(tr 'A-Z' 'a-z' <<< "$slug")" ] || { echo "refused: GitHub names the repo of ${tgt} ${full:-nothing}, not ${slug}." >&2; return 1; }
-    if [ "$op" = pr-comment ]; then
-      r="$(_ask_pii "$body")" || { echo "$r" >&2; return 1; }
-      url="$(gh_pr_comment "$slug" "$num" "$body")" || { echo "failed: GitHub refused the comment on ${tgt}." >&2; return 1; }
-    else
+    if [ "$op" = pr-body ]; then
       me="$(_hw_person "$by" github)"
       if [ "$author" != "$(github_app_login 2>/dev/null || echo -)" ] && { [ -z "$me" ] || [ "$(tr 'A-Z' 'a-z' <<< "$author")" != "$(tr 'A-Z' 'a-z' <<< "$me")" ]; }; then
         [ -n "$me" ] && echo "refused: ${tgt} is by ${author}; the host changes the description only of its own PRs and yours." >&2 \
           || echo "refused: ${tgt} is by ${author}; the host changes the description only of its own PRs, since the team record maps no GitHub login to you." >&2
         return 1
       fi
-      r="$(gh_pr_body_set "$slug" "$num" "$body" 2>&1)" || { head -1 <<< "$r" | sed 's/^ERROR: //' >&2; return 1; }
-      url="$tgt"
+      # A quick look has no Jira key of its own: every key outside a Closes: or Fixes: line goes soft.
+      body="$(printf '%s\n' "$body" | _pr_body_clean "")"
+      [[ "$body" == *[![:space:]]* ]] || { echo "refused: the text is empty." >&2; return 1; }
     fi
+    r="$(_ask_pii "$body")" || { echo "$r" >&2; return 1; }
+  fi
+  if [ "$conf" != 1 ]; then
+    # The quick look has no session words file: the asker's own message is turn 0 of a scratch one.
+    # The used-words file stays in SESSION_DIR, so one message allows one write.
+    d="$(mktemp -d)"
+    jq -nc --arg u "$by" --arg t "$words" '{turn: 0, user: $u, ts: "", text: ($t | .[0:8000])}' > "${d}/${key}.admin-words.jsonl"
+    cp "${SESSION_DIR}/${key}.words-used" "$d/" 2>/dev/null || true
+    r=0; SESSION_DIR="$d" words_match "$key" 0 "$([ "$op" = pr-body ] && echo pr-body || echo comment)" "${toks[@]}" >/dev/null || r=$?
+    cp "${d}/${key}.words-used" "${SESSION_DIR}/" 2>/dev/null || true
+    rm -rf "$d"
+    [ "$r" = 0 ] || { echo "needs-confirm" >&2; return 3; }
+  else
+    # One tap, one write: a second tap or a re-sent action on the same card finds the claim.
+    claim="${SESSION_DIR}/${key}.hw-$(printf '%s|%s|%s' "$op" "$tgt" "$body" | shasum -a 256 | cut -c1-16)"
+    mkdir "$claim" 2>/dev/null || { echo "refused: that card already ran, so nothing ran again." >&2; return 1; }
+  fi
+  if [ "$op" = jira-comment ]; then
+    jira_comment "$tgt" "$body" >/dev/null 2>&1 || { [ -z "$claim" ] || rmdir "$claim"; echo "failed: Jira refused the comment on ${tgt}." >&2; return 1; }
+    url="${FXA_JIRA_SITE_URL:-https://mozilla-hub.atlassian.net}/browse/${tgt}"
+  elif [ "$op" = pr-comment ]; then
+    url="$(gh_pr_comment "$slug" "$num" "$body")" || { [ -z "$claim" ] || rmdir "$claim"; echo "failed: GitHub refused the comment on ${tgt}." >&2; return 1; }
+  else
+    r="$(gh_pr_body_set "$slug" "$num" "$body" 2>&1)" || { [ -z "$claim" ] || rmdir "$claim"; head -1 <<< "$r" | sed 's/^ERROR: //' >&2; return 1; }
+    url="$tgt"
   fi
   jq -nc --arg u "$url" --arg o "$op" '{ok: true, url: $u, op: $o}'
 }

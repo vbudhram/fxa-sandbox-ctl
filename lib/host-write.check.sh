@@ -14,8 +14,8 @@ FXA_SESSION_DIR="$tmp" source "$here/session.sh"
 source "$here/trees.sh"
 source "$here/turn-words.sh"
 source "$here/asks.sh"
-eval "$(sed -n '/^gh_pr_comment() {/,/^}/p;/^gh_pr_body_set() {/,/^}/p' "$here/github.sh")"
-eval "$(sed -n '/^_finish_pii_guard() {/,/^}/p' "$here/finish.sh")"
+eval "$(sed -n '/^gh_pr_comment() {/,/^}/p;/^gh_pr_body_set() {/,/^}/p;/^_pr_body_clean() {/,/^}/p' "$here/github.sh")"
+eval "$(sed -n '/^_finish_pii_guard() {/,/^}/p;/^_finish_soft_keys() {/,/^}/p' "$here/finish.sh")"
 eval "$(sed -n '/^jira_comment() {/,/^}/p' "$here/jira.sh")"
 SESSION_DIR="$tmp" FINISH_LIB_DIR="$here" JIRA_LIB_DIR="$here"
 _session_db_sync() { :; }
@@ -39,9 +39,10 @@ gh() {
 }
 PR=https://github.com/mozilla/fxa/pull/5
 w() { jq -nc --arg o "$1" --arg t "$2" --arg b "${3:-Looks good.}" '{op: $o, body: $b} + (if $o == "jira-comment" then {key: $t} else {url: $t} end)'; }
-# hw <json> <by> <words or --confirmed>   Prints "rc|stdout|stderr|calls".
+# hw <json> <by> <words or --confirmed>   Prints "rc|stdout|stderr|calls". KEEP=1 keeps the used words and the card claims.
 hw() {
   : > "$tmp/calls"
+  [ -n "${KEEP:-}" ] || rm -rf "$tmp"/agent-abcd.words-used "$tmp"/agent-abcd.hw-*
   local out rc=0
   if [ "$3" = --confirmed ]; then out="$(printf '%s' "$1" | session_host_write agent-abcd "$2" "" 1 2>"$tmp/err")" || rc=$?
   else out="$(printf '%s' "$1" | session_host_write agent-abcd "$2" "$3" 0 2>"$tmp/err")" || rc=$?; fi
@@ -83,6 +84,36 @@ check "another person's PR is refused for a mapped admin" "1|" "$(AUTHOR=dana hw
 check "the mapped admin's own PR gets the new body" "0|patch" "$(AUTHOR=Bo-GH hw "$(w pr-body $PR 'Mine.')" UADMINX2 "update the description of PR 5" | cut -d'|' -f1,4)"
 check "a body with personal data is refused before any write" "1|" \
   "$(hw "$(w pr-body $PR 'Ping jane.doe@gmail.com')" UADMINX1 "update the description of PR 5" | cut -d'|' -f1,4)"
+
+# One message allows one write, and one tap runs once; a failed write gives the tap back.
+check "the same words a second time get needs-confirm" "0|3" \
+  "$(hw "$(w pr-comment $PR)" UADMINX1 "comment on PR 5" | cut -d'|' -f1)|$(KEEP=1 hw "$(w pr-comment $PR)" UADMINX1 "comment on PR 5" | cut -d'|' -f1)"
+check "a second tap on the same card runs nothing" "0|1|refused: that card already ran, so nothing ran again.|" \
+  "$(hw "$(w pr-comment $PR)" UADMINX1 --confirmed | cut -d'|' -f1)|$(KEEP=1 hw "$(w pr-comment $PR)" UADMINX1 --confirmed | cut -d'|' -f1,3,4)"
+rm -f "$tmp/list"
+check "a tap whose write failed can run again" "1|0" \
+  "$(POST_FAIL=1 hw "$(w pr-comment $PR)" UADMINX1 --confirmed | cut -d'|' -f1)|$(KEEP=1 hw "$(w pr-comment $PR)" UADMINX1 --confirmed | cut -d'|' -f1)"
+
+# A write that a tap cannot make run is refused now, not shown on a card.
+check "another person's PR body with words that do not name it is refused, not a card" "1" \
+  "$(AUTHOR=dana hw "$(w pr-body $PR 'Other.')" UADMINX1 "rewrite it" | cut -d'|' -f1)"
+check "a PR comment with personal data and words that do not name it is refused, not a card" "1|" \
+  "$(hw "$(w pr-comment $PR 'Ping jane.doe@gmail.com')" UADMINX1 "post it" | cut -d'|' -f1,4)"
+
+# A new PR body drops the Claude Code footer and makes other tickets' keys soft, as the session path does.
+echo 'Old.' > "$tmp/prbody"
+check "the PR body loses the footer, keeps Closes:, and softens FXA-9" "0|See FXA‑9.,Closes: FXA-1" \
+  "$(hw "$(w pr-body $PR $'See FXA-9.\nCloses: FXA-1\n\U0001F916 Generated with [Claude Code](https://claude.com/claude-code)')" UADMINX1 "update the description of PR 5" | cut -d'|' -f1)|$(paste -sd, "$tmp/prbody")"
+long="$(for _ in $(seq 18000); do printf 'a"\n'; done)"
+check "a legal body over 80000 bytes of JSON is not cut" "0|patch" \
+  "$(hw "$(w pr-body $PR "$long")" UADMINX1 "update the description of PR 5" | cut -d'|' -f1,4)"
+
+# Every call leaves an audit row: who, the op, the target, and the result.
+: > "$tmp/agent-abcd.host-actions.jsonl"
+hw "$(w pr-comment $PR)" UPLAIN01 "comment on PR 5" >/dev/null; hw "$(w jira-comment FXA-12)" UADMINX1 "Comment on FXA-12: done" >/dev/null
+check "a refusal and a success each add a row" \
+  "UPLAIN01 pr-comment $PR false refused: only a team admin of fxa can ask for this.|UADMINX1 jira-comment FXA-12 false ok https://mozilla-hub.atlassian.net/browse/FXA-12" \
+  "$(jq -r '"\(.by) \(.op) \(.target) \(.confirmed) \(.result)"' "$tmp/agent-abcd.host-actions.jsonl" | paste -sd'|' -)"
 
 # The session verb: host: jira-comment <KEY>, through the same gate.
 k=agent-abcd
