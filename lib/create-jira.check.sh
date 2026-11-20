@@ -29,8 +29,23 @@ check "the description: the first paragraph and both links" "Short summary of th
   "$(grep -v '^$' "$tmp/desc" | paste -sd'|' -)"
 check "the PR body names the ticket" "yes" "$(tail -1 "$tmp/patched" | grep -q '^Jira: https://mozilla-hub.atlassian.net/browse/FXA-777$' && grep -q '## Testing' "$tmp/patched" && echo yes)"
 rm -f "$tmp/acli" "$tmp/patched"
-check "a routine's ticket: the agent-routine label, its name, and a Closes line in the PR body" "yes|yes|Closes FXA-777" \
+check "a routine's ticket: the agent-routine label, its name, and a Closes: line in the PR body" "yes|yes|Closes: https://mozilla-hub.atlassian.net/browse/FXA-777" \
   "$(session_create_jira agent-x1 --routine "Nightly review" >/dev/null; grep -q -- '--label agent-routine' "$tmp/acli" && echo yes)|$(grep -qx 'Created by fxa-agent from the routine "Nightly review".' "$tmp/desc" && echo yes)|$(tail -1 "$tmp/patched")"
+rm -f "$tmp/acli" "$tmp/patched"
+BODY='## Because
+
+- The docs were stale.
+
+## Issue that this pull request solves
+
+Closes:
+
+## Checklist'
+check "a template body: the description skips the heading, and the routine fills the empty Closes: line" \
+  "- The docs were stale.|Closes: https://mozilla-hub.atlassian.net/browse/FXA-777|1|## Checklist" \
+  "$(session_create_jira agent-x1 --routine "Nightly review" >/dev/null; head -1 "$tmp/desc")|$(grep '^Closes:' "$tmp/patched")|$(grep -c '^Closes' "$tmp/patched")|$(tail -1 "$tmp/patched")"
+check "a session's ticket leaves the template's Closes: line empty" "Closes:|Jira: https://mozilla-hub.atlassian.net/browse/FXA-777" \
+  "$(rm -f "$tmp/patched"; session_create_jira agent-x1 >/dev/null; grep '^Closes' "$tmp/patched")|$(tail -1 "$tmp/patched")"
 rm -f "$tmp/acli"; TITLE='fix(settings): FXA-12 keep the email'
 check "a PR that names a ticket creates nothing" "FXA-12|no" "$(session_create_jira agent-x1)|$([ -e "$tmp/acli" ] && echo yes || echo no)"
 check "a secret team files nothing, and says why" "1|no|yes" \

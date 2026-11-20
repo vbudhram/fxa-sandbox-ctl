@@ -1667,7 +1667,8 @@ session_create_jira() {
     title="$(printf '%s' "$pr" | jq -r '.title | sub("^[a-z]+(\\([^)]*\\))?!?: *"; "")')"
     body="$(printf '%s' "$pr" | jq -r '.body // ""')"
     desc="$(mktemp)"
-    { printf '%s\n' "$body" | awk 'NF { p = 1 } p && !NF { exit } p' | cut -c1-1500
+    # The first paragraph that is not a heading: a PR template starts with "## Because".
+    { printf '%s\n' "$body" | awk '!p && /^#/ { next } NF { p = 1 } p && !NF { exit } p' | cut -c1-1500
       printf '\nPull request: %s\n' "$url"
       [ -n "$(session_get "$1" slack_url)" ] && printf 'Slack thread: %s\n' "$(session_get "$1" slack_url)"
       printf '\nCreated by fxa-agent from %s.\n' "$from"; } > "$desc"
@@ -1675,8 +1676,10 @@ session_create_jira() {
              --description-file "$desc" --label "$label" --json 2>/dev/null | jq -r '.key // empty' 2>/dev/null)" || key=""
     rm -f "$desc"
     [[ "$key" =~ ^[A-Z][A-Z0-9]*-[0-9]+$ ]] || { echo "could not create a Jira ticket for $url" >&2; return 1; }
-    if [ -n "$rname" ]; then link="Closes ${key}"; else link="Jira: ${site}/browse/${key}"; fi
-    { printf '%s' "$pr" | jq -r '.body // ""'; printf '\n\n%s\n' "$link"; } \
+    if [ -n "$rname" ]; then link="Closes: ${site}/browse/${key}"; else link="Jira: ${site}/browse/${key}"; fi
+    # A routine's link fills the PR template's empty "Closes:" line, as FxA PRs do; else it goes last.
+    printf '%s' "$pr" | jq -r '.body // ""' \
+      | awk -v l="$link" -v r="$rname" 'r != "" && !d && /^Closes:[ \t\r]*$/ { print l; d = 1; next } { print } END { if (!d) printf "\n%s\n", l }' \
       | gh api -X PATCH "repos/$(_session_pr_parts "$1" | cut -f1)/pulls/$(_session_pr_parts "$1" | cut -f2)" -F body=@- >/dev/null 2>&1 \
       || echo "NOTE: created $key, but could not add it to the PR body" >&2
     _session_history_add "$1" action "Created ${key} for ${url}"
