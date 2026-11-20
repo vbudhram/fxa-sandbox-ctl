@@ -98,4 +98,27 @@ _session_secret_values() { echo false; }
 r12="$(run FXA-12)"; PIPE_RUNTIME_SECRETS="fxa-team-x=/a" done_ "$r12" "$tmp/sec.md" >/dev/null
 check "a failed secret read: the run fails, nothing posts" "failed|investigation not posted: the host could not read a runtime secret to mask the comment, so it is not posted|0" \
   "$(row "$r12")|$([ -e "$tmp/comment.FXA-12" ] && echo 1 || echo 0)"
+
+# A run that fails before its session runs: the label is gone, so the ticket gets one comment with the reason.
+pipeline_load() { echo "$1" >> "$tmp/loaded"; }
+# pre <key> <state>   An investigation run with no session yet; prints its id.
+pre() { local h; h="$(jq -nc --arg k "$1" '{investigate: {key: $k, by: "acc-a1"}}')"
+  db_value "INSERT INTO routine_runs (routine_id, period, trigger, state, config, heads, started_at) VALUES ($rid, 'jira-$1-$RANDOM', 'jira-label', '$2',
+  json($(db_q "$cfg")), json($(db_q "$h")), 1); SELECT last_insert_rowid();"; }
+posts() { grep -cx "$1" "$tmp/posted" || true; }
+r20="$(pre FXA-20 claimed)"; routine_done "$r20" --state failed --reason "the start message did not post in C0OWN00: not_in_channel" >/dev/null
+check "a start the bot refused: one comment with the reason, by the run's team" \
+  "🤖 The investigation did not start: the start message did not post in C0OWN00: not_in_channel. Add ai-investigate again to retry.|fxa|1" \
+  "$(cat "$tmp/comment.FXA-20" 2>/dev/null)|$(tail -1 "$tmp/loaded" 2>/dev/null)|$(posts FXA-20)"
+routine_done "$r20" --state failed --reason again >/dev/null 2>&1
+check "a second done of that run posts no second comment" "1" "$(posts FXA-20)"
+r21="$(pre FXA-21 claimed)"; routine_run_start "$r21" agent-iv21; routine_run_fail "$r21" "the session could not start"; routine_run_fail "$r21" "again"
+check "a session that could not start: one comment" "🤖 The investigation did not start: the session could not start. Add ai-investigate again to retry.|1" \
+  "$(cat "$tmp/comment.FXA-21" 2>/dev/null)|$(posts FXA-21)"
+r22="$(pre FXA-22 claimed)"; r23="$(run FXA-23)"; rm -f "$tmp/agent-iv01.json"; SESSION_DIR="$tmp" routine_reconcile 100000 live >/dev/null
+check "the tick fails a claimed run with no session: one comment; a started run whose session is gone gets none" \
+  "🤖 The investigation did not start: no session started within 10 min. Add ai-investigate again to retry.|failed|0" \
+  "$(cat "$tmp/comment.FXA-22" 2>/dev/null)|$(row "$r23" | cut -d'|' -f1)|$(posts FXA-23)"
+r24="$(pre FXA-24 claimed)"; JIRA_DOWN=1 routine_done "$r24" --state failed --reason x >/dev/null
+check "Jira refuses the comment: the run still fails" "failed|x" "$(row "$r24")"
 exit "$fail"

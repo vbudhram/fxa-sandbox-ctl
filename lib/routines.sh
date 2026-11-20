@@ -208,7 +208,8 @@ routine_run_start() {
 
 # routine_run_fail <run> <reason>   A started run whose session could not start.
 routine_run_fail() {
-  db_exec "UPDATE routine_runs SET state = 'failed', reason = $(db_q "$2"), ended_at = $(date +%s) WHERE id = $1 AND state IN (${_ROUTINE_LIVE_STATES});" >/dev/null
+  local n; n="$(db_value "UPDATE routine_runs SET state = 'failed', reason = $(db_q "$2"), ended_at = $(date +%s) WHERE id = $1 AND state IN (${_ROUTINE_LIVE_STATES}); SELECT changes();")" || return 1
+  [ "$n" != 1 ] || _inv_no_start "$1"
 }
 
 # _prfix_skip <run> <why> <reason>   End a live fix row skipped, with heads.fix.why (the migration 012 trigger frees its head).
@@ -579,12 +580,24 @@ prfix_sweep() {
 _INV_NOT_ADMIN="🤖 Only a team admin can start an investigation. Ask one to add %s."
 _INV_TWICE="🤖 The investigation of this ticket failed twice in 24 hours, so I do not start it again now. Add %s again later."
 _INV_NO_ADDER="🤖 I cannot tell who added %s, so I do not start an investigation. A team admin can add it again."
+_INV_NO_START="🤖 The investigation did not start: %s. Add %s again to retry."
 _INV_MOST=3
 
 # _inv_note <key> <text>   One comment on the ticket, led by 🤖 (jira_comment adds the 🤖 itself for a person's login).
 _inv_note() { if _jira_sa; then jira_comment "$1" "$2"; else jira_comment "$1" "${2#🤖 }"; fi; }
 # _inv_unlabel <key> <label>   Remove the label; exit 1 when Jira refused, so nothing more happens to the ticket.
 _inv_unlabel() { acli jira workitem edit -k "$1" --remove-labels "$2" -y >/dev/null 2>&1; }
+# _inv_no_start <run>   One comment on the ticket of an investigation run that just failed before its session ran: its
+# label is gone, so the comment is the only signal. The run's team is loaded in a subshell. Never fails its caller.
+_inv_no_start() {
+  local j key
+  j="$(db_json "SELECT t.team, coalesce(r.reason, 'no reason recorded') AS why, json_extract(r.heads, '$.investigate.key') AS key,
+    coalesce(json_extract(coalesce(r.config, t.data), '$.jira.label'), 'ai-investigate') AS label
+    FROM routine_runs r JOIN routines t ON t.id = r.routine_id WHERE r.id = ${1} AND r.state = 'failed';" 2>/dev/null)" || return 0
+  key="$(jq -r '.[0].key // ""' <<< "$j" 2>/dev/null)" || return 0
+  [[ "$key" =~ ^[A-Z][A-Z0-9]{1,9}-[0-9]{1,7}$ ]] || return 0
+  ( pipeline_load "$(jq -r '.[0].team' <<< "$j")" && _inv_note "$key" "$(printf "$_INV_NO_START" "$(jq -r '.[0].why' <<< "$j")" "$(jq -r '.[0].label' <<< "$j")")" ) </dev/null >/dev/null 2>&1 || true
+}
 
 # _inv_consider <routine id> <cfg json> <key> <label> <now>   One labelled ticket, with the routine's team loaded. A ticket
 # with a live run of this routine waits. The label's adder is the newest changelog item that added it: a non-admin gets
@@ -1134,6 +1147,7 @@ routine_reconcile() {
       local n; n="$(db_value "UPDATE routine_runs SET state = 'failed', reason = $(db_q "$why"), ended_at = $now WHERE id = $id AND state = '$st'; SELECT changes();")" \
         || { echo "$_ROUTINE_STORE" >&2; return 1; }
       [ "$n" = 1 ] && errors_record routine run_failed "$sess" "routine tick" "routine run ${id}: ${why}" ""
+      [ "$n" != 1 ] || [ "$st" = started ] || _inv_no_start "$id"
     fi
     sst=""
   done < <(jq -c '.[]' <<< "$rows")
@@ -1262,6 +1276,7 @@ routine_done() {
       cost_usd = $( { [ -n "$sess" ] && _routine_session_cost "$sess"; } | grep . || echo cost_usd), ended_at = $(_routine_now),
       heads = $( [ -n "$ires" ] && echo "json_set(heads, '$.investigate.result', json($(db_q "$(jq -c .result <<< "$ires")")))" || echo heads )
       WHERE id = ${run} AND ${guard}; SELECT changes();")" || n=""
+  [ "$n" != 1 ] || [ -n "$sess" ] || _inv_no_start "$run"
   # The PR comment follows the end at once; a failure is repaired by the next tick.
   [ -z "$fix" ] || prfix_report "$run" >/dev/null 2>&1 || true
   local add='{}'
