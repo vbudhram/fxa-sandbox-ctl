@@ -205,7 +205,8 @@ check "a dry run passes the gate for a non-admin; a real run and smoke do not" "
   "$(asks_gate 0 Bo 'release train=349' >/dev/null; echo $?)|$(asks_gate 0 Bo 'release train=349 dry_run=false' >/dev/null; echo $?)|$(asks_gate 0 Bo 'smoke tag=v1.349.4' >/dev/null; echo $?)"
 rgh() { printf '%s|%s\n' "${GH_TOKEN:-}" "$*" >> "$tmp/gh"
   case "$*" in *dispatches*) echo 77 ;; *contents/.github/workflows/*) echo "${BLOB:-aaaaaaaaaaaaaaaa}" ;; *runs/77/jobs*) echo 5 ;; *runs/77*) echo "completed success" ;;
-    *jobs/5/logs*) printf '2026-11-19T20:00:00.1Z ##[group]Run plan\n2026-11-19T20:00:01.1Z ### Release plan: v1.349.4\n2026-11-19T20:00:01.3Z - Commit: x ghp_abcdefghijklmnop\n2026-11-19T20:00:02.1Z ##[group]Run post\n' ;; esac; }
+    *jobs/5/logs*) case "$*" in *--allow-escape-sequences*) ;; *) echo 'the response contains terminal escape sequences' >&2; return 1 ;; esac
+      printf '2026-11-19T20:00:00.1Z ##[group]Run plan\n2026-11-19T20:00:01.1Z \033[36;1m### Release plan: v1.349.4\033[0m\n2026-11-19T20:00:01.3Z - Commit: x ghp_abcdefghijklmnop\n2026-11-19T20:00:02.1Z ##[group]Run post\n' ;; esac; }
 vm_put() { tar -xzf "$2" -C "$tmp" && echo "put $3" >> "$tmp/vm"; }
 new; : > "$tmp/gh"; : > "$tmp/vm"
 got="$(gh() { rgh "$@"; }; sleep() { :; }; _ask_one $k 0 Bo 'release train=349 sha=0c8976e40f93c55462a37854c9d4432a8917ab60')"
