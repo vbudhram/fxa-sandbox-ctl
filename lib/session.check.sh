@@ -191,7 +191,7 @@ printf 'Squashing 1 commit(s)\n  WARN: could not upload a.png to the media bucke
 check "notes count failed uploads" "2 screenshot(s) did not upload, so the PR is missing them." "$(_session_finish_notes agent-t2)"
 check "wrap step after the turn" "Opening the pull request" "$(_session_wrap_step agent-t2)"
 : > "$SESSION_DIR/agent-t2.finish.log"
-check "wrap step before any host line" "Staging the work on the host" "$(_session_wrap_step agent-t2)"
+check "wrap step before any host line" "Preparing the change to commit" "$(_session_wrap_step agent-t2)"
 session_set agent-t2 state pr_open pr_url https://github.com/mozilla/fxa/pull/1 pr_announced 0 finish_notes "one
 two" summary '{"cost":1.5,"turns":3,"minutes":20,"diff":"2 files changed"}'
 out="$(cmd_events agent-t2)"

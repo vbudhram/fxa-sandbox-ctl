@@ -105,7 +105,7 @@ check "an admin's Allow runs the ask with the App's token" "done: https://github
   "$(asks_confirm $k "$n1" "$s1" allow Ana 1)|$(cat "$tmp/gh")"
 check "the tap is logged and the result note's turn has no admin" "Bo:Ana:ready|1|0|host" \
   "$(jq -r 'select(.tapped_by and (.result | startswith("done"))) | "\(.asked_by):\(.tapped_by):\(.ask)"' "$tmp/$k.host-actions.jsonl")|$(grep -c 'Result: done' "$tmp/$k.queue")|$(session_get $k q_admin)|$(session_get $k q_asker)"
-check "a second tap is a Deny and runs nothing" "expired: this card is no longer valid, so it counts as Deny. Nothing ran.|1" \
+check "a second tap is a Deny and runs nothing" "expired: this card is no longer valid. Nothing ran.|1" \
   "$(asks_confirm $k "$n1" "$s1" allow Ana 1)|$(grep -c . "$tmp/gh")"
 new; asks_role "$k" 1 Ana; words "log a new JIRA issue for this PR, then make it ready for review"
 _ASKS_NO_JOB=1 asks_take "$k" '[{"type":"turn_end","asks":["ready"]}]'
@@ -193,7 +193,7 @@ check "a refused ask does not stop the job under pipefail" "reached|2" \
   "$( (set -euo pipefail; session_asks "$k" >/dev/null 2>&1; echo reached) )|$(grep -c . "$tmp/$k.host-actions.jsonl")"
 
 # release and smoke: dispatch only the record's workflows; a dry run runs for anyone, a real run needs a tap.
-check "a team with no release workflow is refused" "refused: team fxa names no release workflow in its record." "$(_ask_one $k 1 Ana 'release train=349')"
+check "a team with no release workflow is refused" "refused: team fxa has no release workflow set up." "$(_ask_one $k 1 Ana 'release train=349')"
 PIPE_RELEASE_WORKFLOW=release-stage.yml PIPE_SMOKE_WORKFLOW=smoke-stage.yml
 check "the inputs parse, and an override reason is not an input" "train=349|dry_run=false|1" \
   "$(_ask_release_inputs 'release train=349 dry_run=false' | paste -sd'|' -)|$(_ask_one $k 1 Ana 'release train=349 override_ci_reason=flake' | grep -c 'override_ci_reason is not an input')"
@@ -220,7 +220,7 @@ check "a real run is never run from an admin's words: it waits on a card with th
   "$(grep -c dispatches "$tmp/gh")|$(ls "$tmp/$k".confirm-* | grep -c .)|$(jq -r .target "$c")"
 n="${c##*confirm-}"; s="$(jq -r .sha "$c")"; : > "$tmp/gh"
 got="$(gh() { BLOB=bbbbbbbbbbbbbbbb rgh "$@"; }; asks_confirm "$k" "$n" "$s" allow Ana 1)"
-check "a workflow that changed before the tap refuses, and nothing is dispatched" "1|0" "$(grep -c 'is not what GitHub shows now' <<< "$got")|$(grep -c dispatches "$tmp/gh")"
+check "a workflow that changed before the tap refuses, and nothing is dispatched" "1|0" "$(grep -c 'changed on GitHub after the card was shown' <<< "$got")|$(grep -c dispatches "$tmp/gh")"
 ( gh() { rgh "$@"; }; _ASKS_NO_JOB=1 asks_take "$k" '[{"type":"turn_end","asks":["smoke tag=v1.349.4"]}]'; session_asks "$k" )
 c="$(ls "$tmp/$k".confirm-* | head -1)"; n="${c##*confirm-}"; s="$(jq -r .sha "$c")"; : > "$tmp/gh"
 got="$(gh() { rgh "$@"; }; asks_confirm "$k" "$n" "$s" allow Cy 1)"

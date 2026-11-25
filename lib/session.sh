@@ -855,7 +855,7 @@ true'
 # _session_out_mask   Each line from a runner, masked as the watch page masks it and cut at 500 characters.
 _session_out_mask() {
   jq -R -r --slurpfile vals <(_session_secret_values) "${_SESSION_MASK_JQ} mask | .[0:500]" 2>/dev/null \
-    || echo "(not shown: the host could not read the team's runtime secrets to mask it)"
+    || echo "(not shown: I could not load the team's secrets, so I cannot hide them in this output)"
 }
 
 # _session_out_logged <key> <what> <slack user> <text>   Print the text for a post, with a history line
@@ -920,10 +920,10 @@ session_sh() {
   [ -n "$c" ] && [ "${#c}" -le 2000 ] || { echo "refused: give a command of 1 to 2000 characters"; return 1; }
   [[ "$by" =~ ^[UW][A-Z0-9]{2,20}$ ]] || { echo "refused: no Slack user"; return 1; }
   [ "$adm" = 1 ] || [ "$by" = "$(session_get "$key" owner)" ] || { echo "refused: only the session's owner or a team admin can run a command"; return 1; }
-  [ -z "${PIPE_RUNTIME_SECRETS:-}" ] || [ "$adm" = 1 ] || { echo "refused: this team has runtime secrets, so only a team admin can run a command"; return 1; }
+  [ -z "${PIPE_RUNTIME_SECRETS:-}" ] || [ "$adm" = 1 ] || { echo "refused: this team's sandbox holds secrets, so only a team admin can run a command"; return 1; }
   _session_lock "$key" || { echo "refused: the session is busy. Try again in a minute."; return 1; }
   if [ "$(session_get "$key" state)" != active ] || [ "$(session_get "$key" turn_open)" = 1 ] || _session_handoff_busy "$key"; then
-    _session_unlock "$key"; echo "refused: a command runs only while the session waits for a reply, with no turn open"; return 1
+    _session_unlock "$key"; echo "refused: a command runs only while I wait for a reply, not while I work. Try again when I finish"; return 1
   fi
   err="$(mktemp "${TMPDIR:-/tmp}/fxa-sh.XXXXXX")"; t0="$(date +%s)"
   out="$(printf '%s\n' "$c" | _session_sh_in "$(worktree_branch_for "$key")" 110 65536 "$_SESSION_SH_RUN" 2>"$err" | _session_out_mask)" || true
@@ -1364,7 +1364,7 @@ _session_boot_label() {
   case "$1" in
     "On main at "*) echo "on main at ${1#On main at }" ;;
     "Resuming "*" at "*) echo "on the earlier base at ${1##* at }" | sed 's/[,.].*//' ;;
-    "Starting the runner host"*) echo "starting a runner" ;;
+    "Starting the runner host"*) echo "starting a sandbox" ;;
     "Creating GCE"*) echo "creating a sandbox" ;;
     Restoring*) echo "restoring a sandbox with FxA running" ;;
     "Waiting for ssh"*) echo "waiting for the sandbox to boot" ;;
@@ -1557,7 +1557,7 @@ _session_finish_notes() {
   local log="${SESSION_DIR}/$1.finish.log" n
   n="$(grep -c 'WARN: could not upload .* to the media bucket' "$log" 2>/dev/null || true)"
   [ "${n:-0}" -gt 0 ] && echo "${n} screenshot(s) did not upload, so the PR is missing them."
-  grep -q "WARN: could not attach round media\|WARN: could not post round media" "$log" 2>/dev/null && echo "This round's screenshots did not reach the PR."
+  grep -q "WARN: could not attach round media\|WARN: could not post round media" "$log" 2>/dev/null && echo "The screenshots from this update did not reach the PR."
   grep -q "NOTE: the PR was created; some media did not upload" "$log" 2>/dev/null && echo "Some screenshots did not attach to the PR."
   true
 }
@@ -1569,8 +1569,8 @@ _session_wrap_step() {
   case "$l" in
     Creating*|"PR already"*) echo "Opening the pull request" ;;
     Committing*|Pushing*) echo "Committing and pushing" ;;
-    Staging*|Squashing*) echo "Checking the change: tooling, frozen paths, conflict markers" ;;
-    *) echo "Staging the work on the host" ;;
+    Staging*|Squashing*) echo "Checking the change for edits to tool files, protected paths and conflict markers" ;;
+    *) echo "Preparing the change to commit" ;;
   esac
 }
 

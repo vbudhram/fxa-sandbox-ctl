@@ -24,7 +24,7 @@ check "a bad line count is refused" "2" "$(session_tail agent-out1 '5; id' >/dev
 _session_secret_values() { echo false; }
 out="$(session_tail agent-out1 5)"
 check "tail shows nothing of the output when a secret read failed" "0|0|1" \
-  "$(grep -c "$SECRET" <<< "$out")|$(grep -c 'PASS one' <<< "$out")|$(grep -c 'not shown: the host could not read' <<< "$out")"
+  "$(grep -c "$SECRET" <<< "$out")|$(grep -c 'PASS one' <<< "$out")|$(grep -c 'not shown: I could not load the team' <<< "$out")"
 _session_secret_values() { printf '"%s"\n' "$SECRET"; }
 
 w="\$(touch pwned)'x"
