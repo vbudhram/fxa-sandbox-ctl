@@ -89,6 +89,7 @@ asks_gate() {
     rerun-ci|request-review|ready|draft|comment|jira-comment|add-repo|investigate) ;;
     release|smoke) local o; o="$(_ask_release_inputs "$3")" || { echo "$o"; return 1; }
       _ask_release_dry "$3" && return 0 ;;
+    point) local o; o="$(_ask_point_inputs "$3")" || { echo "$o"; return 1; } ;;
     *) echo "refused: ${action:-an empty line} is not a host action."; return 1 ;;
   esac
   [ "$adm" = 1 ] || { echo "refused: only a team admin of ${PIPE_PROFILE:-this team} can ask for this, and ${who} is not one. Ask a team admin to say it in the thread."; return 1; }
@@ -151,6 +152,7 @@ _ask_one() {
     add-repo) _ask_repo "$key" "${rest%% *}" ;;
     investigate) inv_ask "${rest%% *}" "$key" "$3" ;;
     release|smoke) _ask_release "$key" "$4" "$3" ;;
+    point) _ask_point "$4" "$3" ;;
     jira-comment) _ask_jira_comment "$key" "${rest%% *}" ;;
     *) _ask_gh "$key" "$action" $rest ;;
   esac
@@ -369,6 +371,108 @@ _ask_release() {
   echo "done: the plan ran (${st#* }): ${url}. Read /workspace/.fxa-release-plan.md and show it."
 }
 
+# A point ask: 'point train=<N> commits=<sha>,<sha>'. The host cherry-picks each commit with -x onto point/<next tag>
+# from the train-N head, one App-signed commit each (no squash), and opens a draft PR into train-N. Only commits
+# already on main or another train, so a point PR (which needs no approval) holds only reviewed code.
+
+# _ask_point_inputs <line>   "<N> <sha> <sha>...", or the refusal.
+_ask_point_inputs() {
+  local rest k v train="" commits=""
+  read -r _ rest <<< "$1"
+  [ -n "${PIPE_RELEASE_WORKFLOW:-}" ] || { echo "refused: team ${PIPE_PROFILE:-?} names no release workflow in its record."; return 1; }
+  for k in $rest; do
+    v="${k#*=}"
+    case "$k" in
+      train=*) [[ "$v" =~ ^[1-9][0-9]{0,4}$ ]] && train="$v" || { echo "refused: ${k} is not a valid train."; return 1; } ;;
+      commits=*) [[ "$v" =~ ^[0-9a-f]{7,40}(,[0-9a-f]{7,40}){0,19}$ ]] && commits="${v//,/ }" || { echo "refused: write commits=<sha>,<sha> (up to 20)."; return 1; } ;;
+      *) echo "refused: ${k%%=*} is not an input of the point ask."; return 1 ;;
+    esac
+  done
+  [ -n "$train" ] && [ -n "$commits" ] || { echo "refused: write point train=<N> commits=<sha>,<sha>."; return 1; }
+  echo "$train $commits"
+}
+
+# _ask_point_plan <line>   Fetch, then check each commit. Prints "<root> <N> <tag> <train head> <full sha>...".
+_ask_point_plan() {
+  local in train c full root head max ons="" fulls=""
+  in="$(_ask_point_inputs "$1")" || { echo "$in"; return 1; }
+  read -r train _ <<< "$in"
+  root="$(worktree_repo_root 2>/dev/null)" || { echo "failed: the host has no clone of ${PIPE_REPO_SLUG:-the repo}."; return 1; }
+  _retry git -C "$root" fetch -q origin "+refs/heads/main:refs/remotes/origin/main" "+refs/heads/train-*:refs/remotes/origin/train-*" >/dev/null 2>&1 \
+    || { echo "failed: the host could not fetch ${PIPE_REPO_SLUG:-the repo}."; return 1; }
+  head="$(git -C "$root" rev-parse -q --verify "refs/remotes/origin/train-${train}^{commit}")" || { echo "refused: there is no train-${train}."; return 1; }
+  # ponytail: tags of the team repo only; release-plan.sh also reads the public repo's and refuses a wrong point/ name.
+  max="$(_retry git -C "$root" ls-remote --tags origin "refs/tags/v1.${train}.*" 2>/dev/null)" || { echo "failed: the host could not read the tags of ${PIPE_REPO_SLUG}."; return 1; }
+  max="$(sed -n "s#.*refs/tags/v1\.${train}\.\([0-9][0-9]*\)\$#\1#p" <<< "$max" | sort -n | tail -1)"
+  [ -n "$max" ] || { echo "refused: train-${train} has no v1.${train}.P tag to follow."; return 1; }
+  ons="$(_retry git -C "$root" ls-remote --heads origin "point/v1.${train}.$((max + 1))" 2>/dev/null)" || { echo "failed: the host could not read the branches of ${PIPE_REPO_SLUG}."; return 1; }
+  [ -z "$ons" ] || { echo "refused: point/v1.${train}.$((max + 1)) already exists. Delete it, or add to its PR."; return 1; }
+  for c in ${in#* }; do
+    full="$(git -C "$root" rev-parse -q --verify "${c}^{commit}")" || { echo "refused: ${c} is not a commit of ${PIPE_REPO_SLUG}."; return 1; }
+    [ "$(git -C "$root" rev-list --parents -n 1 "$full" | wc -w | tr -d ' ')" = 2 ] \
+      || { echo "refused: ${c} is a merge or root commit. Name the commits it brought in."; return 1; }
+    ons="$(git -C "$root" for-each-ref --contains "$full" --format='%(refname:short)' refs/remotes/origin/main 'refs/remotes/origin/train-*' | grep -vx "origin/train-${train}" || true)"
+    [ -n "$ons" ] || { echo "refused: ${c} is not on main or on another train, so no review covers it."; return 1; }
+    fulls="${fulls} ${full}"
+  done
+  echo "${root} ${train} v1.${train}.$((max + 1)) ${head}${fulls}"
+}
+
+# _ask_point_target <line>   What a point card acts on. A train that moves before the tap makes the card refuse.
+_ask_point_target() {
+  local p root train tag head c s=""
+  p="$(_ask_point_plan "$1")" || { echo "$p"; return 1; }
+  read -r root train tag head _ <<< "$p"
+  for c in $(cut -d' ' -f5- <<< "$p"); do s="${s} ${c:0:12}"; done
+  echo "${PIPE_REPO_SLUG} point/${tag} from train-${train} at ${head:0:12}:${s}"
+}
+
+# _ask_point <line> <who>   Build the branch in a host worktree with no checkout, then push. A conflict stops it
+# before any push. Not retried: a second push or PR create could double up, so a failure says what is left.
+_ask_point() {
+  local p root train tag head c d parent tree msg au branch n=0 skip="" url body="" tok
+  p="$(_ask_point_plan "$1")" || { echo "$p"; return 1; }
+  read -r root train tag head _ <<< "$p"
+  branch="point/${tag}"
+  github_app_enabled 2>/dev/null || { echo "refused: the GitHub App is not set up on this host."; return 1; }
+  d="$(mktemp -d)/wt"
+  git -C "$root" worktree add -q --no-checkout --detach "$d" "$head" >/dev/null 2>&1 || { echo "failed: the host could not make a worktree."; return 1; }
+  # Pass 1: each cherry-pick as a local commit. Nothing leaves the host.
+  local -a picks=()
+  parent="$head"
+  for c in $(cut -d' ' -f5- <<< "$p"); do
+    if ! tree="$(git -C "$d" merge-tree --write-tree --no-messages --name-only --merge-base="${c}^" "$parent" "$c" 2>/dev/null)"; then
+      git -C "$root" worktree remove --force "$d" >/dev/null 2>&1 || true; rmdir "${d%/wt}" 2>/dev/null || true
+      echo "refused: ${c:0:12} conflicts with train-${train} in $(sed -n '2,$p' <<< "$tree" | sed '/^$/,$d' | head -5 | paste -sd, - | sed 's/,/, /g'). Nothing was pushed. Uplift it by hand, or leave it out."
+      return 1
+    fi
+    tree="${tree%%$'\n'*}"
+    [ "$tree" != "$(git -C "$d" rev-parse "${parent}^{tree}")" ] || { skip="${skip} ${c:0:12}"; continue; }
+    au="$(git -C "$d" log -1 --format='%an <%ae>' "$c")"
+    msg="$(git -C "$d" log -1 --format=%B "$c" | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}')"$'\n\n'"(cherry picked from commit ${c})"
+    grep -qiE '\[bot\]' <<< "$au" || msg="${msg}"$'\n'"Co-authored-by: ${au}"
+    parent="$(git -C "$d" commit-tree "$tree" -p "$parent" -m "$msg")"
+    picks+=("$parent")
+  done
+  [ "${#picks[@]}" -gt 0 ] || { git -C "$root" worktree remove --force "$d" >/dev/null 2>&1 || true; rmdir "${d%/wt}" 2>/dev/null || true; echo "refused: train-${train} already has every commit:${skip}."; return 1; }
+  # Pass 2: the same commits, each signed by the App through the API.
+  parent="$head"
+  for c in "${picks[@]}"; do
+    git -C "$d" read-tree "$c" && parent="$(github_app_commit "$d" "$branch" "$parent" "$(git -C "$d" log -1 --format=%B "$c")" 2>/dev/null)" && [ -n "$parent" ] || {
+      git -C "$root" worktree remove --force "$d" >/dev/null 2>&1 || true; rmdir "${d%/wt}" 2>/dev/null || true
+      echo "failed: the push stopped after ${n} of ${#picks[@]} commits.$([ "$n" = 0 ] || echo " Delete ${branch}, then ask again.")"; return 1; }
+    n=$((n + 1))
+    body="${body}- $(git -C "$d" log -1 --format=%s "$c")"$'\n'
+  done
+  git -C "$root" worktree remove --force "$d" >/dev/null 2>&1 || true; rmdir "${d%/wt}" 2>/dev/null || true
+  body="Point release ${tag}: ${n} commit(s) cherry-picked with -x onto train-${train}, asked by ${2:-someone}.${skip:+ Already on the train:${skip}.}"$'\n\n'"${body}"$'\n'"Merge with a merge commit, not a squash, so each commit keeps its cherry-pick line."
+  tok="$(github_app_token 2>/dev/null)" || { echo "failed: pushed ${branch}, but there is no App token to open its PR."; return 1; }
+  url="$(GH_TOKEN="$tok" command gh pr create -R "$PIPE_REPO_SLUG" --draft --base "train-${train}" --head "$branch" --title "chore(release): point release ${tag}" --body "$body" 2>/dev/null | tail -1)" \
+    || url="$(GH_TOKEN="$tok" gh pr list -R "$PIPE_REPO_SLUG" --head "$branch" --base "train-${train}" --state open --json url -q '.[0].url' 2>/dev/null || true)"
+  [ -n "$url" ] || { echo "failed: pushed ${n} commit(s) to ${branch}, but GitHub refused the PR into train-${train}."; return 1; }
+  echo "done: pushed ${n} commit(s) to ${branch} and opened ${url} (draft) into train-${train}.${skip:+ Skipped, already on the train:${skip}.} When its CI is green, plan with 'host: release train=${train} sha=${parent} dry_run=true'."
+}
+
 # _ask_comment_body <key>   The agent's comment file, taken off the runner and masked (exact values too).
 _ask_comment_body() {
   vm_exec_as_agent "$(worktree_branch_for "$1")" 'head -c 8000 /workspace/.fxa-host-comment.md 2>/dev/null; rm -f /workspace/.fxa-host-comment.md' 2>/dev/null \
@@ -380,7 +484,7 @@ _ask_comment_body() {
 _asks_target() {
   local key="$1" action rest a url="" pr slug num got full author tok
   read -r action rest <<< "$2"
-  case "$action" in release|smoke) _ask_release_target "$2"; return ;; esac
+  case "$action" in release|smoke) _ask_release_target "$2"; return ;; point) _ask_point_target "$2"; return ;; esac
   if [ "$action" = add-repo ]; then got="$(_asks_repo_row "${rest%% *}")" || { echo "refused: not a team repo."; return 1; }; echo "repo ${got%% *}"; return 0; fi
   [ "$action" != investigate ] || { inv_ask "${rest%% *}" "$key" "" --check; return; }
   [ "$action" != jira-comment ] || { _asks_jira_ours "${rest%% *}" && echo "Jira ${rest%% *}"; return; }

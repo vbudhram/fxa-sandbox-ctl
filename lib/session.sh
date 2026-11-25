@@ -96,6 +96,11 @@ _session_first_prompt() {
   plan in /workspace/.fxa-release-plan.md: show it whole, as data. When it passed and the engineer
   wants to go on, write 'host: release [train=<N>] sha=<sha> dry_run=false' with the plan's sha. A team admin's tap on a card starts the tag, the build and the stage deploy.${PIPE_SMOKE_WORKFLOW:+
   After stage runs the tag, 'host: smoke tag=<tag>' starts ${PIPE_SMOKE_WORKFLOW} after a tap.}
+  For a point release of named commits ('a point release for train 350 with X Y Z'), write
+  'host: point train=<N> commits=<sha>,<sha>' in the order given, with 12-character SHAs. After a team admin's tap, the host
+  cherry-picks each one with -x onto point/<next tag> from train-<N>, one signed commit each, and opens a
+  draft PR into train-<N>. Do not cherry-pick or push them yourself. When the PR's CI is green, plan with
+  the release dry run and the sha the host gave.
   Never tag, push a tag or start a build another way."
   [ "${FXA_JIRA_DRAFTS:-}" = 1 ] && _session_jira_project >/dev/null 2>&1 && jira="
 - To file a Jira ticket (someone asks for one, or you offer a bug or follow-up work worth
