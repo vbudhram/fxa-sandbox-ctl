@@ -24,7 +24,8 @@ t0=$(date +%s)
 step "packages"
 pk="build-essential pkg-config cmake libmysqlclient-dev libpq-dev libssl-dev python3-dev python3-venv"
 # --no-upgrade: an upgrade of libmysqlclient-dev pulled a new mysql-server, which reset root's login.
-dpkg -s $pk > /dev/null 2>&1 || { apt-get update -q && DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-upgrade $pk; } > /dev/null || die "could not install the build packages"
+# One mirror mid-sync fails the update for every repo; the main archive's indexes still install the packages.
+dpkg -s $pk > /dev/null 2>&1 || { apt-get update -q || apt-get update -q || true; DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-upgrade $pk; } > /dev/null || die "could not install the build packages"
 
 step "Rust"
 # CI's toolchain: the repo's rust-version line (RUST_VER) names it. A newer clippy flags code CI passes.
